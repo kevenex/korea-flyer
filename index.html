@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>South Korea Flyover — Low-Poly Flight</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #87CEEB;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #fff; user-select: none; }
+  canvas { display: block; }
+
+  #hud {
+    position: fixed; top: 18px; left: 18px; padding: 12px 16px;
+    background: rgba(10,15,25,0.42); border-radius: 10px;
+    font-size: 13px; line-height: 1.55; pointer-events: none;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+    min-width: 180px;
+  }
+  #hud .row { display: flex; justify-content: space-between; gap: 16px; }
+  #hud .label { opacity: 0.55; letter-spacing: 0.08em; font-size: 11px; }
+  #hud .value { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  #minimap {
+    position: fixed; top: 18px; right: 18px;
+    background: rgba(10,15,25,0.42); border-radius: 10px; padding: 8px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  #minimap canvas { display: block; border-radius: 4px; }
+  #minimap .cap { font-size: 10px; opacity: 0.6; text-align: center;
+    letter-spacing: 0.14em; margin-top: 4px; }
+
+  #flyto {
+    position: fixed; bottom: 18px; left: 18px;
+    display: flex; gap: 6px; flex-wrap: wrap; max-width: 48vw;
+  }
+  #flyto button {
+    padding: 7px 12px; background: rgba(10,15,25,0.42);
+    color: #fff; border: 1px solid rgba(255,255,255,0.12); border-radius: 18px;
+    cursor: pointer; font-size: 12px; font-family: inherit;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    transition: background 0.15s, transform 0.15s;
+  }
+  #flyto button:hover { background: rgba(255,255,255,0.18); }
+  #flyto button:active { transform: scale(0.96); }
+
+  #instructions {
+    position: fixed; bottom: 18px; right: 18px; padding: 12px 14px;
+    background: rgba(10,15,25,0.42); border-radius: 10px;
+    font-size: 12px; line-height: 1.55; max-width: 260px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  #instructions h3 { font-size: 11px; letter-spacing: 0.14em;
+    opacity: 0.65; margin-bottom: 6px; font-weight: 600; }
+  #instructions kbd {
+    background: rgba(255,255,255,0.14); padding: 1px 6px; border-radius: 4px;
+    font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 11px;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  #splash {
+    position: fixed; inset: 0; z-index: 100;
+    background: linear-gradient(180deg, #6ec4ff 0%, #b8dcfa 55%, #fff2c9 100%);
+    display: flex; align-items: center; justify-content: center;
+    animation: fadeIn 0.6s ease;
+  }
+  #splash .card { text-align: center; padding: 40px 60px; color: #1a2740; }
+  #splash h1 { font-size: 38px; margin-bottom: 6px; font-weight: 700;
+    letter-spacing: -0.01em; }
+  #splash .sub { opacity: 0.7; margin-bottom: 26px; font-size: 15px; }
+  #splash button {
+    padding: 12px 28px; background: #1a2740; color: #fff;
+    border: none; border-radius: 24px; font-size: 15px; cursor: pointer;
+    font-weight: 600; font-family: inherit;
+    transition: transform 0.15s, background 0.15s;
+  }
+  #splash button:hover { background: #2b3a5c; transform: translateY(-1px); }
+
+  @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="splash">
+  <div class="card">
+    <h1>South Korea from Above</h1>
+    <div class="sub">A stylized first-person flight over the Korean peninsula</div>
+    <button id="startBtn">Start Flying</button>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <div class="row"><span class="label">SPEED</span><span><span class="value" id="hudSpeed">0</span> kt</span></div>
+  <div class="row"><span class="label">ALT</span><span><span class="value" id="hudAlt">0</span> m</span></div>
+  <div class="row"><span class="label">HDG</span><span><span class="value" id="hudHdg">0</span>°</span></div>
+  <div class="row"><span class="label">NEAR</span><span class="value" id="hudCity">—</span></div>
+</div>
+
+<div id="minimap" class="hidden">
+  <canvas id="miniCanvas" width="170" height="230"></canvas>
+  <div class="cap">SOUTH KOREA</div>
+</div>
+
+<div id="flyto" class="hidden"></div>
+
+<div id="instructions" class="hidden">
+  <h3>CONTROLS</h3>
+  <div><kbd>W</kbd> / <kbd>S</kbd> — throttle up / down</div>
+  <div><kbd>A</kbd> <kbd>D</kbd> or <kbd>←</kbd> <kbd>→</kbd> — steer (bank)</div>
+  <div><kbd>↑</kbd> / <kbd>↓</kbd> — pitch up / down</div>
+  <div>Click canvas — mouse look (optional)</div>
+  <div style="margin-top: 6px; opacity: 0.6">Auto-forward is on for a scenic flight.</div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ==========================================================================
+   TUNABLE CONFIG — tweak these to change the flight feel and world scale
+   ========================================================================== */
+const CONFIG = {
+  // Flight dynamics
+  baseSpeed:      45,     // world-units / second (auto-forward starting speed)
+  maxSpeed:       140,
+  minSpeed:       18,
+  throttleRate:   45,     // units/s² for W/S
+  turnRate:       0.85,   // rad/s for A/D
+  pitchRate:      0.55,   // rad/s for arrow up/down
+  bankMax:        0.55,   // max roll angle when turning
+  bankSmoothing:  4.5,    // higher = snappier bank response
+  mouseSensitivity: 0.0022,
+  startAltitude:  110,
+  minAGL:         4,      // minimum height above ground
+
+  // World dimensions
+  seaSize:        4200,
+  terrainBounds:  { minX: -190, maxX: 380, minZ: -110, maxZ: 520 },
+  terrainSegs:    { w: 160, h: 180 },
+  mountainAmp:    75,     // baseline noise amplitude on land
+  taebaekBoost:   80,     // extra height on the eastern (Taebaek) side
+
+  // Aesthetics
+  fogNear:        260,
+  fogFar:         950,
+  skyTop:         0x6ec4ff,
+  skyHorizon:     0xffe9b0,
+};
+
+/* ==========================================================================
+   CITIES — edit x (east+) / z (south+) to reposition landmarks
+   Coordinates are roughly scaled from real lat/lng, Seoul at origin.
+   ========================================================================== */
+const CITIES = [
+  { name: 'Seoul',    x:    0, z:    0, kind: 'seoul'   },
+  { name: 'Incheon',  x:  -38, z:   15, kind: 'airport' },
+  { name: 'Daejeon',  x:   53, z:  200, kind: 'city', scale: 0.75 },
+  { name: 'Daegu',    x:  205, z:  270, kind: 'city', scale: 0.8  },
+  { name: 'Gwangju',  x:  -12, z:  380, kind: 'city', scale: 0.75 },
+  { name: 'Gyeongju', x:  280, z:  275, kind: 'temple'  },
+  { name: 'Busan',    x:  270, z:  400, kind: 'busan'   },
+  { name: 'Jeju',     x:  -55, z:  590, kind: 'jeju'    },
+];
+
+/* Peninsula outline (clockwise, X east / Z south).
+   Used for terrain shaping AND minimap rendering. */
+const PENINSULA = [
+  [-70,-40], [-20,-55], [ 50,-60], [120,-50], [180,-30],
+  [230, 10], [280, 70], [320,140], [340,220], [340,300],
+  [325,370], [295,420], [250,450], [180,460], [ 90,455],
+  [ 20,445], [-30,425], [-55,385], [-40,325], [-60,270],
+  [-95,215], [-100,150], [-90, 80], [-95, 20],
+];
+
+/* ==========================================================================
+   SCENE, CAMERA, RENDERER
+   ========================================================================== */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(CONFIG.skyTop);
+scene.fog = new THREE.Fog(CONFIG.skyHorizon, CONFIG.fogNear, CONFIG.fogFar);
+
+const camera = new THREE.PerspectiveCamera(
+  72, window.innerWidth / window.innerHeight, 0.5, 2400
+);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+/* ==========================================================================
+   LIGHTING — soft hemisphere plus a warm directional sun
+   ========================================================================== */
+scene.add(new THREE.HemisphereLight(0xc9e4ff, 0x4a3a24, 0.85));
+const sun = new THREE.DirectionalLight(0xfff2cc, 1.15);
+sun.position.set(240, 380, 160);
+scene.add(sun);
+
+/* ==========================================================================
+   SKY DOME — vertical gradient shader (no textures)
+   ========================================================================== */
+{
+  const skyGeo = new THREE.SphereGeometry(1800, 32, 16);
+  const skyMat = new THREE.ShaderMaterial({
+    uniforms: {
+      topColor:    { value: new THREE.Color(CONFIG.skyTop) },
+      bottomColor: { value: new THREE.Color(CONFIG.skyHorizon) },
+    },
+    vertexShader: /*glsl*/`
+      varying vec3 vWorld;
+      void main() { vWorld = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /*glsl*/`
+      uniform vec3 topColor; uniform vec3 bottomColor; varying vec3 vWorld;
+      void main() {
+        float h = clamp((vWorld.y / 1200.0) + 0.18, 0.0, 1.0);
+        h = pow(h, 0.75);
+        gl_FragColor = vec4(mix(bottomColor, topColor, h), 1.0);
+      }`,
+    side: THREE.BackSide, depthWrite: false,
+  });
+  scene.add(new THREE.Mesh(skyGeo, skyMat));
+}
+
+/* ==========================================================================
+   SEA — a single flat blue plane just below the underwater terrain
+   ========================================================================== */
+{
+  const seaGeo = new THREE.PlaneGeometry(CONFIG.seaSize, CONFIG.seaSize);
+  seaGeo.rotateX(-Math.PI / 2);
+  const seaMat = new THREE.MeshLambertMaterial({ color: 0x2f6ea9 });
+  const sea = new THREE.Mesh(seaGeo, seaMat);
+  sea.position.y = -0.4;
+  scene.add(sea);
+}
+
+/* ==========================================================================
+   GEOMETRY / MATH HELPERS
+   ========================================================================== */
+function pointInPolygon(px, py, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1];
+    const xj = poly[j][0], yj = poly[j][1];
+    const hit = ((yi > py) !== (yj > py)) &&
+      (px < (xj - xi) * (py - yi) / (yj - yi + 1e-9) + xi);
+    if (hit) inside = !inside;
+  }
+  return inside;
+}
+
+function distanceToPolygon(px, py, poly) {
+  let minD = Infinity;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const ax = poly[j][0], ay = poly[j][1];
+    const bx = poly[i][0], by = poly[i][1];
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    let t = ((px - ax) * dx + (py - ay) * dy) / (len2 + 1e-9);
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + t * dx, cy = ay + t * dy;
+    const ddx = px - cx, ddy = py - cy;
+    const d = Math.hypot(ddx, ddy);
+    if (d < minD) minD = d;
+  }
+  return minD;
+}
+
+// Signed distance: negative inside the peninsula, positive outside
+function sdfPeninsula(x, z) {
+  const d = distanceToPolygon(x, z, PENINSULA);
+  return pointInPolygon(x, z, PENINSULA) ? -d : d;
+}
+
+// Lightweight value noise + fBm (deterministic, no dependencies)
+function hash2(x, y) {
+  const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+function noise2(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf);
+  const v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi,     yi    );
+  const b = hash2(xi + 1, yi    );
+  const c = hash2(xi,     yi + 1);
+  const d = hash2(xi + 1, yi + 1);
+  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
+}
+function fbm(x, y, octaves = 4) {
+  let v = 0, amp = 1, freq = 1, sum = 0;
+  for (let i = 0; i < octaves; i++) {
+    v += amp * noise2(x * freq, y * freq);
+    sum += amp; freq *= 2; amp *= 0.5;
+  }
+  return v / sum;
+}
+function smoothstep(a, b, x) {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+/* Central terrain height function. Called for both the terrain mesh and
+   for ground-clamping the aircraft. Deterministic. */
+function heightAt(x, z) {
+  const sd = sdfPeninsula(x, z);
+  if (sd > 0) {
+    // Just offshore: seafloor slopes down; hidden by sea plane at y = -0.4
+    return -3 - Math.min(12, sd * 0.25);
+  }
+  const inland = -sd;                          // distance from coast, inward
+  const coastFade = smoothstep(0, 22, inland); // smooth ramp so coast isn't a cliff
+  const base  = fbm(x * 0.008, z * 0.008, 4);
+  const ridge = fbm(x * 0.023 + 100, z * 0.023, 3);
+
+  // Taebaek mountain range — rises along the east side, softens toward the far south
+  const eastFactor  = smoothstep(120, 320, x);
+  const southTaper  = 1 - smoothstep(360, 460, z);
+  const taebaek     = eastFactor * southTaper * CONFIG.taebaekBoost * (0.4 + 0.6 * ridge);
+
+  let y = (base * 0.55 + ridge * 0.45) * CONFIG.mountainAmp + taebaek;
+  y *= coastFade;
+  return Math.max(0.5, y);
+}
+
+/* Color a terrain face by its average height (produces the flat-shaded look) */
+const _tmpColor = new THREE.Color();
+function colorForHeight(out, y) {
+  if (y < 1.2)  out.setRGB(0.86, 0.83, 0.62);   // sand / beach
+  else if (y < 8)   out.setRGB(0.56, 0.74, 0.36); // lowland green
+  else if (y < 24)  out.setRGB(0.42, 0.63, 0.28); // rolling hills
+  else if (y < 55)  out.setRGB(0.36, 0.48, 0.30); // forested slope
+  else if (y < 95)  out.setRGB(0.52, 0.47, 0.40); // exposed rock
+  else if (y < 140) out.setRGB(0.68, 0.63, 0.58); // high mountain
+  else              out.setRGB(0.94, 0.94, 0.96); // snow cap
+}
+
+/* ==========================================================================
+   MAINLAND TERRAIN
+   ========================================================================== */
+function buildTerrain() {
+  const b = CONFIG.terrainBounds;
+  const w = b.maxX - b.minX;
+  const h = b.maxZ - b.minZ;
+  const geo = new THREE.PlaneGeometry(w, h, CONFIG.terrainSegs.w, CONFIG.terrainSegs.h);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate((b.minX + b.maxX) / 2, 0, (b.minZ + b.maxZ) / 2);
+
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, heightAt(pos.getX(i), pos.getZ(i)));
+  }
+
+  // Non-indexed so each triangle gets its own vertices → clean flat colors
+  const ni = geo.toNonIndexed();
+  const p = ni.attributes.position;
+  const colors = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i += 3) {
+    const yAvg = (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3;
+    colorForHeight(_tmpColor, yAvg);
+    for (let k = 0; k < 3; k++) {
+      colors[(i + k) * 3 + 0] = _tmpColor.r;
+      colors[(i + k) * 3 + 1] = _tmpColor.g;
+      colors[(i + k) * 3 + 2] = _tmpColor.b;
+    }
+  }
+  ni.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  ni.computeVertexNormals();
+
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  return new THREE.Mesh(ni, mat);
+}
+scene.add(buildTerrain());
+
+/* ==========================================================================
+   JEJU ISLAND — separate mesh with Hallasan volcano cone
+   ========================================================================== */
+function buildJeju() {
+  const cx = -55, cz = 590;
+  const size = 130, segs = 44, R = 48;
+  const geo = new THREE.PlaneGeometry(size, size, segs, segs);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const lx = pos.getX(i), lz = pos.getZ(i);
+    const r = Math.hypot(lx, lz);
+    let y;
+    if (r < R) {
+      const t = 1 - r / R;
+      y = t * 6 + Math.pow(t, 2.6) * 70;
+      y += fbm(lx * 0.04 + 5, lz * 0.04) * 2.5 * (r / R);
+    } else {
+      y = -3 - Math.min(10, (r - R) * 0.3);
+    }
+    pos.setY(i, y);
+  }
+  const ni = geo.toNonIndexed();
+  const p = ni.attributes.position;
+  const colors = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i += 3) {
+    const y = (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3;
+    colorForHeight(_tmpColor, y);
+    for (let k = 0; k < 3; k++) {
+      colors[(i + k) * 3 + 0] = _tmpColor.r;
+      colors[(i + k) * 3 + 1] = _tmpColor.g;
+      colors[(i + k) * 3 + 2] = _tmpColor.b;
+    }
+  }
+  ni.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  ni.computeVertexNormals();
+  const mesh = new THREE.Mesh(ni, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+  mesh.position.set(cx, 0, cz);
+  return mesh;
+}
+scene.add(buildJeju());
+
+/* ==========================================================================
+   CITY LANDMARKS — small low-poly clusters per location
+   ========================================================================== */
+const MAT = {
+  concrete: new THREE.MeshLambertMaterial({ color: 0xbdc0c6, flatShading: true }),
+  glass:    new THREE.MeshLambertMaterial({ color: 0x7aa8c9, flatShading: true }),
+  dark:     new THREE.MeshLambertMaterial({ color: 0x3a3f47, flatShading: true }),
+  roof:     new THREE.MeshLambertMaterial({ color: 0x8b3a2e, flatShading: true }),
+  wood:     new THREE.MeshLambertMaterial({ color: 0x6b4325, flatShading: true }),
+  strip:    new THREE.MeshLambertMaterial({ color: 0x2b2e35, flatShading: true }),
+  red:      new THREE.MeshLambertMaterial({ color: 0xd23a35, flatShading: true }),
+  white:    new THREE.MeshLambertMaterial({ color: 0xf0efe8, flatShading: true }),
+  hill:     new THREE.MeshLambertMaterial({ color: 0x3d5c34, flatShading: true }),
+};
+
+// Small deterministic PRNG so clusters are stable across reloads
+function seededRng(seed) {
+  let s = Math.abs(Math.sin(seed) * 10000) % 1;
+  return () => { s = (s * 9301 + 49297) % 233280 / 233280; return s; };
+}
+
+function buildingCluster(count, hMin, hMax, spread, seed) {
+  const g = new THREE.Group();
+  const rng = seededRng(seed);
+  for (let i = 0; i < count; i++) {
+    const w = 3 + rng() * 4;
+    const d = 3 + rng() * 4;
+    const h = hMin + rng() * (hMax - hMin);
+    const mat = rng() > 0.5 ? MAT.concrete : MAT.glass;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set((rng() - 0.5) * spread, h / 2, (rng() - 0.5) * spread);
+    g.add(m);
+  }
+  return g;
+}
+
+function buildSeoul() {
+  const g = new THREE.Group();
+  g.add(buildingCluster(46, 8, 34, 55, 42));
+  // Namsan hill + N Seoul Tower
+  const hill = new THREE.Mesh(new THREE.ConeGeometry(14, 14, 20), MAT.hill);
+  hill.position.set(-12, 7, -18);
+  g.add(hill);
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.0, 28, 10), MAT.white);
+  tower.position.set(-12, 14 + 14, -18);
+  g.add(tower);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(2.8, 14, 10), MAT.red);
+  bulb.position.set(-12, 14 + 28, -18);
+  g.add(bulb);
+  return g;
+}
+
+function buildBusan() {
+  const g = new THREE.Group();
+  g.add(buildingCluster(26, 6, 24, 34, 71));
+  // Simple cable-stayed bridge across a coastal gap
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1, 46), MAT.strip);
+  deck.position.set(18, 7, 0);
+  g.add(deck);
+  for (let s = -1; s <= 1; s += 2) {
+    const pylon = new THREE.Mesh(new THREE.BoxGeometry(1.1, 24, 1.3), MAT.white);
+    pylon.position.set(18, 12, s * 12);
+    g.add(pylon);
+  }
+  return g;
+}
+
+function buildIncheon() {
+  const g = new THREE.Group();
+  g.add(buildingCluster(8, 4, 10, 22, 91));
+  // Runway strip + terminal
+  const runway = new THREE.Mesh(new THREE.BoxGeometry(9, 0.4, 55), MAT.strip);
+  runway.position.set(-18, 0.3, 0);
+  g.add(runway);
+  const terminal = new THREE.Mesh(new THREE.BoxGeometry(22, 4, 6.5), MAT.white);
+  terminal.position.set(-18, 2, -34);
+  g.add(terminal);
+  return g;
+}
+
+function buildTemple() {
+  const g = new THREE.Group();
+  // Stone base
+  const plat = new THREE.Mesh(new THREE.BoxGeometry(16, 0.9, 16), MAT.concrete);
+  plat.position.y = -0.45;
+  g.add(plat);
+  // Stacked pagoda tiers
+  const tiers = 5;
+  for (let i = 0; i < tiers; i++) {
+    const s = 6.5 - i * 0.95;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(s, 1.4, s), MAT.wood);
+    body.position.y = i * 3.2 + 0.7;
+    g.add(body);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(s * 0.95, 1.7, 4), MAT.roof);
+    roof.position.y = i * 3.2 + 2.15;
+    roof.rotation.y = Math.PI / 4;
+    g.add(roof);
+  }
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.35, 3.2, 6), MAT.roof);
+  spire.position.y = tiers * 3.2 + 0.8;
+  g.add(spire);
+  return g;
+}
+
+function buildJejuTown() {
+  // Small coastal village at the base of Hallasan
+  const g = new THREE.Group();
+  g.add(buildingCluster(9, 2.5, 6, 22, 33));
+  return g;
+}
+
+/* ==========================================================================
+   CITY LABELS — canvas-textured sprites that always face the camera
+   ========================================================================== */
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x,     y + h, r);
+  ctx.arcTo(x,     y + h, x,     y,     r);
+  ctx.arcTo(x,     y,     x + w, y,     r);
+  ctx.closePath();
+}
+
+function buildCityLabel(name) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 320; canvas.height = 72;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(10, 20, 40, 0.66)';
+  roundRect(ctx, 4, 8, 312, 56, 14); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 30px Helvetica, Arial, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(name, 160, 38);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = 4;
+
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthTest: true, depthWrite: false,
+  }));
+  spr.scale.set(34, 7.7, 1);
+  return spr;
+}
+
+// Instantiate all cities
+for (const c of CITIES) {
+  const ground = heightAt(c.x, c.z);
+  let mesh;
+  switch (c.kind) {
+    case 'seoul':   mesh = buildSeoul();   break;
+    case 'busan':   mesh = buildBusan();   break;
+    case 'airport': mesh = buildIncheon(); break;
+    case 'temple':  mesh = buildTemple();  break;
+    case 'jeju':    mesh = buildJejuTown();break;
+    default:        mesh = buildingCluster(14, 4, 15, 24, c.x * 7 + c.z);
+  }
+  if (c.scale) mesh.scale.setScalar(c.scale);
+  mesh.position.set(c.x, Math.max(0.5, ground), c.z);
+  scene.add(mesh);
+
+  const label = buildCityLabel(c.name);
+  const labelBoost = (c.kind === 'jeju') ? 90 : 58;
+  label.position.set(c.x, ground + labelBoost, c.z);
+  scene.add(label);
+}
+
+/* ==========================================================================
+   AIRCRAFT — a bare Object3D holding the camera (first-person view)
+   ========================================================================== */
+const aircraft = new THREE.Object3D();
+aircraft.position.set(0, CONFIG.startAltitude, -70);
+aircraft.add(camera);
+scene.add(aircraft);
+
+// Flight state
+let yaw   = Math.PI;   // facing south (+Z)
+let pitch = 0;
+let roll  = 0;
+let targetRoll = 0;
+let speed = CONFIG.baseSpeed;
+
+/* ==========================================================================
+   INPUT — keyboard + optional pointer-lock mouse look
+   ========================================================================== */
+const keys = Object.create(null);
+window.addEventListener('keydown', e => { keys[e.code] = true; });
+window.addEventListener('keyup',   e => { keys[e.code] = false; });
+
+let mouseDYaw = 0, mouseDPitch = 0, pointerLocked = false;
+renderer.domElement.addEventListener('click', () => {
+  if (!pointerLocked) renderer.domElement.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = document.pointerLockElement === renderer.domElement;
+});
+document.addEventListener('mousemove', e => {
+  if (!pointerLocked) return;
+  mouseDYaw   -= e.movementX * CONFIG.mouseSensitivity;
+  mouseDPitch -= e.movementY * CONFIG.mouseSensitivity;
+});
+
+/* ==========================================================================
+   HUD REFERENCES
+   ========================================================================== */
+const hudSpeed = document.getElementById('hudSpeed');
+const hudAlt   = document.getElementById('hudAlt');
+const hudHdg   = document.getElementById('hudHdg');
+const hudCity  = document.getElementById('hudCity');
+
+/* ==========================================================================
+   MINIMAP — a 2D canvas rendering peninsula + cities + aircraft heading
+   ========================================================================== */
+const miniCanvas = document.getElementById('miniCanvas');
+const miniCtx    = miniCanvas.getContext('2d');
+const MINI_BOUNDS = { minX: -140, maxX: 370, minZ: -80, maxZ: 720 };
+
+function toMini(x, z) {
+  const w = miniCanvas.width, h = miniCanvas.height;
+  return [
+    (x - MINI_BOUNDS.minX) / (MINI_BOUNDS.maxX - MINI_BOUNDS.minX) * w,
+    (z - MINI_BOUNDS.minZ) / (MINI_BOUNDS.maxZ - MINI_BOUNDS.minZ) * h,
+  ];
+}
+
+function drawMinimap() {
+  const w = miniCanvas.width, h = miniCanvas.height;
+  miniCtx.clearRect(0, 0, w, h);
+  // Ocean background
+  miniCtx.fillStyle = '#153a5a';
+  miniCtx.fillRect(0, 0, w, h);
+
+  // Peninsula polygon
+  miniCtx.beginPath();
+  for (let i = 0; i < PENINSULA.length; i++) {
+    const [px, py] = toMini(PENINSULA[i][0], PENINSULA[i][1]);
+    if (i === 0) miniCtx.moveTo(px, py); else miniCtx.lineTo(px, py);
+  }
+  miniCtx.closePath();
+  miniCtx.fillStyle = '#7cb56a';
+  miniCtx.fill();
+  miniCtx.strokeStyle = 'rgba(255,255,255,0.28)';
+  miniCtx.lineWidth = 1;
+  miniCtx.stroke();
+
+  // Jeju (small island)
+  const [jx, jy] = toMini(-55, 590);
+  miniCtx.beginPath(); miniCtx.arc(jx, jy, 6, 0, Math.PI * 2);
+  miniCtx.fillStyle = '#7cb56a'; miniCtx.fill(); miniCtx.stroke();
+
+  // City dots
+  miniCtx.fillStyle = '#ffffff';
+  for (const c of CITIES) {
+    const [px, py] = toMini(c.x, c.z);
+    miniCtx.beginPath(); miniCtx.arc(px, py, 2, 0, Math.PI * 2); miniCtx.fill();
+  }
+
+  // Aircraft arrow
+  const [ax, ay] = toMini(aircraft.position.x, aircraft.position.z);
+  miniCtx.save();
+  miniCtx.translate(ax, ay);
+  // In our coord system yaw=π faces +Z (down on the minimap). Rotate arrow accordingly.
+  miniCtx.rotate(-yaw + Math.PI);
+  miniCtx.fillStyle = '#ff5b5b';
+  miniCtx.beginPath();
+  miniCtx.moveTo(0, -7);
+  miniCtx.lineTo(5, 5);
+  miniCtx.lineTo(-5, 5);
+  miniCtx.closePath();
+  miniCtx.fill();
+  miniCtx.strokeStyle = 'rgba(0,0,0,0.4)';
+  miniCtx.stroke();
+  miniCtx.restore();
+}
+
+/* ==========================================================================
+   FLY-TO BUTTONS — smoothly interpolate camera to a viewpoint near a city
+   ========================================================================== */
+const FLY_TARGETS = [
+  // name, x, z, approach-yaw (heading to face while approaching)
+  ['Seoul',    0,     0, Math.PI     ],
+  ['Incheon', -38,   15, Math.PI     ],
+  ['Daejeon',  53,  200, Math.PI     ],
+  ['Daegu',   205,  270, Math.PI * 1.15],
+  ['Gwangju', -12,  380, Math.PI     ],
+  ['Gyeongju',280,  275, Math.PI / 2 ],
+  ['Busan',   270,  400, Math.PI * 0.7 ],
+  ['Jeju',    -55,  590, 0           ],
+];
+
+const flytoEl = document.getElementById('flyto');
+let flyingTo = null;
+
+for (const [name, tx, tz, tyaw] of FLY_TARGETS) {
+  const btn = document.createElement('button');
+  btn.textContent = name;
+  btn.onclick = () => {
+    // Sit ~90 units behind the city along the approach heading
+    const dx = 90 * Math.sin(tyaw);
+    const dz = 90 * Math.cos(tyaw);
+    flyingTo = {
+      fromX: aircraft.position.x, fromY: aircraft.position.y, fromZ: aircraft.position.z,
+      fromYaw: yaw, fromPitch: pitch,
+      toX: tx + dx, toY: 140, toZ: tz + dz,
+      toYaw: tyaw, toPitch: -0.15,
+      t: 0, dur: 3.8,
+    };
+  };
+  flytoEl.appendChild(btn);
+}
+
+/* ==========================================================================
+   MAIN LOOP
+   ========================================================================== */
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpAngle(a, b, t) {
+  let d = b - a;
+  while (d >  Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+
+function findNearestCity() {
+  let best = CITIES[0], bestD = Infinity;
+  for (const c of CITIES) {
+    const d = Math.hypot(c.x - aircraft.position.x, c.z - aircraft.position.z);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return { name: best.name, dist: bestD };
+}
+
+let last = performance.now();
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  update(dt);
+  drawMinimap();
+  renderer.render(scene, camera);
+}
+
+function update(dt) {
+  if (flyingTo) {
+    // Smooth ease-in-out interpolation from current pose to target pose
+    flyingTo.t += dt;
+    const raw = Math.min(1, flyingTo.t / flyingTo.dur);
+    const t = raw * raw * (3 - 2 * raw);
+    aircraft.position.x = lerp(flyingTo.fromX, flyingTo.toX, t);
+    aircraft.position.y = lerp(flyingTo.fromY, flyingTo.toY, t);
+    aircraft.position.z = lerp(flyingTo.fromZ, flyingTo.toZ, t);
+    yaw   = lerpAngle(flyingTo.fromYaw,   flyingTo.toYaw,   t);
+    pitch = lerp(flyingTo.fromPitch, flyingTo.toPitch, t);
+    targetRoll = 0;
+    roll += (targetRoll - roll) * Math.min(1, dt * CONFIG.bankSmoothing);
+    if (raw >= 1) flyingTo = null;
+  } else {
+    // --- Manual controls ---
+    let turn = 0;
+    if (keys['KeyA'] || keys['ArrowLeft'])  turn += 1;
+    if (keys['KeyD'] || keys['ArrowRight']) turn -= 1;
+    let pitchIn = 0;
+    if (keys['ArrowUp'])   pitchIn += 1;
+    if (keys['ArrowDown']) pitchIn -= 1;
+    if (keys['KeyW']) speed = Math.min(CONFIG.maxSpeed, speed + CONFIG.throttleRate * dt);
+    if (keys['KeyS']) speed = Math.max(CONFIG.minSpeed, speed - CONFIG.throttleRate * dt);
+
+    // Apply mouse-look deltas (consumed each frame)
+    yaw   += mouseDYaw;   mouseDYaw = 0;
+    pitch += mouseDPitch; mouseDPitch = 0;
+
+    // Apply key steering
+    yaw   += turn * CONFIG.turnRate  * dt;
+    pitch += pitchIn * CONFIG.pitchRate * dt;
+    pitch  = Math.max(-0.7, Math.min(0.7, pitch));
+
+    // Bank when turning (looks cinematic)
+    targetRoll = turn * CONFIG.bankMax;
+    roll += (targetRoll - roll) * Math.min(1, dt * CONFIG.bankSmoothing);
+
+    // Forward motion — camera looks down -Z in local space, so world forward is
+    // R(yaw, pitch) applied to (0,0,-1).
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const cy = Math.cos(yaw),   sy = Math.sin(yaw);
+    aircraft.position.x += (-sy * cp) * speed * dt;
+    aircraft.position.y += ( sp     ) * speed * dt;
+    aircraft.position.z += (-cy * cp) * speed * dt;
+  }
+
+  // Prevent flying into terrain
+  const groundY = heightAt(aircraft.position.x, aircraft.position.z);
+  const floor = Math.max(groundY + CONFIG.minAGL, 1);
+  if (aircraft.position.y < floor) aircraft.position.y = floor;
+
+  // Apply orientation. Order YXZ = yaw → pitch → roll, standard for aircraft.
+  aircraft.rotation.set(pitch, yaw, roll, 'YXZ');
+
+  // HUD updates
+  hudSpeed.textContent = Math.round(speed * 1.94);      // world-units/s → arbitrary "knots"
+  hudAlt.textContent   = Math.round(aircraft.position.y - groundY);
+  // Convert yaw to compass heading (0° = North). yaw=0 faces -Z (North).
+  let hdg = ((-yaw * 180 / Math.PI) % 360 + 360) % 360;
+  hudHdg.textContent   = Math.round(hdg).toString().padStart(3, '0');
+  const near = findNearestCity();
+  hudCity.textContent  = `${near.name} · ${Math.round(near.dist)}u`;
+}
+
+/* ==========================================================================
+   RESIZE + SPLASH
+   ========================================================================== */
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  document.getElementById('splash').classList.add('hidden');
+  document.getElementById('hud').classList.remove('hidden');
+  document.getElementById('minimap').classList.remove('hidden');
+  document.getElementById('flyto').classList.remove('hidden');
+  document.getElementById('instructions').classList.remove('hidden');
+});
+
+animate();
+</script>
+</body>
+</html>
