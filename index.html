@@ -99,7 +99,7 @@
 </div>
 
 <div id="minimap" class="hidden">
-  <canvas id="miniCanvas" width="168" height="248"></canvas>
+  <canvas id="miniCanvas" width="168" height="282"></canvas>
   <div class="cap">SOUTH KOREA</div>
 </div>
 
@@ -111,7 +111,7 @@
   <div><kbd>A</kbd> <kbd>D</kbd> or <kbd>←</kbd> <kbd>→</kbd> — steer (bank)</div>
   <div><kbd>↑</kbd> / <kbd>↓</kbd> — pitch up / down</div>
   <div>Click canvas — mouse look (optional)</div>
-  <div style="margin-top: 6px; opacity: 0.6">Auto-forward is on. Use the fly-to buttons to hop between cities — Korea is ~450 km long.</div>
+  <div style="margin-top: 6px; opacity: 0.6">You start in a hover — hold <kbd>W</kbd> to fly, <kbd>S</kbd> to brake to a stop. Fly-to buttons hop between cities — Korea is ~450 km long.</div>
 </div>
 
 <!-- Three.js is loaded as a classic (UMD) script on purpose: a plain <script> tag
@@ -171,11 +171,11 @@ const hh = m => m * HHEX / 100;   // heritage metres  → world units (horizonta
    ========================================================================== */
 const CONFIG = {
   // Speeds are world units/s. Time runs ~100× faster than life so the country
-  // is crossable in about a minute; speedReadout converts back to the airspeed
-  // an aircraft doing this for real would be showing.
-  baseSpeed:      70,    // ≈ 250 km/h on the HUD — an easy sightseeing cruise
+  // is crossable in about a minute at full throttle; speedReadout converts back
+  // to the airspeed an aircraft doing this for real would be showing.
+  baseSpeed:       0,    // no auto-forward — you hover until W is held
   maxSpeed:      300,
-  minSpeed:       20,
+  minSpeed:        0,    // S brakes all the way to a stop
   throttleRate:   70,
   speedReadout:  3.6,    // world units/s → km/h shown on the HUD
   turnRate:      0.70,   // rad/s
@@ -207,40 +207,92 @@ const CITIES = [
   { name: 'Incheon',   x:  -26, z:   10, urbanR: 12, baseM:  28 },
   { name: 'Suwon',     x:    1, z:   32, urbanR:  8, baseM:  45 },
   { name: 'Chuncheon', x:   65, z:  -37, urbanR:  6, baseM:  80 },
-  { name: 'Sokcho',    x:  133, z:  -64, urbanR:  5, baseM:  32 },
-  { name: 'Gangneung', x:  163, z:  -20, urbanR:  6, baseM:  34 },
+  { name: 'Sokcho',    x:  134, z:  -66, urbanR:  5, baseM:  32 },
+  { name: 'Gangneung', x:  168, z:  -24, urbanR:  6, baseM:  34 },
   { name: 'Cheongju',  x:   44, z:  101, urbanR:  7, baseM:  60 },
   { name: 'Daejeon',   x:   34, z:  133, urbanR: 11, baseM:  70 },
   { name: 'Jeonju',    x:   13, z:  192, urbanR:  7, baseM:  55 },
   { name: 'Daegu',     x:  142, z:  186, urbanR: 12, baseM:  50 },
-  { name: 'Pohang',    x:  203, z:  168, urbanR:  7, baseM:  30 },
+  { name: 'Pohang',    x:  208, z:  170, urbanR:  7, baseM:  30 },
   { name: 'Gyeongju',  x:  198, z:  188, urbanR:  9, baseM:  50 },
   { name: 'Ulsan',     x:  199, z:  221, urbanR:  8, baseM:  22 },
   { name: 'Gwangju',   x:  -13, z:  266, urbanR: 11, baseM:  70 },
   { name: 'Mokpo',     x:  -48, z:  300, urbanR:  5, baseM:  32 },
-  { name: 'Yeosu',     x:   59, z:  310, urbanR:  6, baseM:  30 },
+  { name: 'Yeosu',     x:   61, z:  313, urbanR:  5, baseM:  30 },
   { name: 'Busan',     x:  185, z:  263, urbanR: 13, baseM:  32 },
   { name: 'Jeju',      x:  -42, z:  449, urbanR:  0, baseM:   0 },  // island, own mesh
 ];
 const city = Object.fromEntries(CITIES.map(c => [c.name, c]));
 
-/* South Korea's coastline, clockwise from the north-west, in kilometres.
-   Drives the terrain silhouette and the minimap. */
+/* South Korea's coastline, clockwise from the north-west, in kilometres —
+   traced from real geography: x = (lon − 127.0) × 88.8, z = (37.55 − lat) × 111.
+   Starts at the Han estuary, runs down the tidal west coast (Taean, Byeonsan),
+   around the deeply indented south coast (Goheung, Yeosu, Tongyeong), up the
+   smooth east coast (Busan → Pohang's Homigot hook → Sokcho), then back west
+   along the DMZ. Drives the terrain silhouette and the minimap. */
 const COAST = [
-  [ -53, -28], [ -46,  10], [ -62,  36], [ -74,  62], [ -77,  89],   // Gyeonggi + Taean
-  [ -62, 112], [ -52, 138], [ -35, 174], [ -44, 200], [ -58, 232],   // west coast, Gunsan
-  [ -52, 262], [ -60, 292], [ -54, 306], [ -50, 330], [ -44, 361],   // Mokpo + south-west tip
-  [ -10, 348], [  22, 338], [  50, 330], [  66, 312], [  96, 318],   // south coast, Yeosu
-  [ 127, 300], [ 152, 292], [ 172, 282], [ 185, 272], [ 197, 250],   // Tongyeong → Busan
-  [ 205, 223], [ 209, 196], [ 210, 170], [ 205, 138], [ 197, 104],   // Ulsan → Pohang
-  [ 190,  70], [ 182,  32], [ 169, -22], [ 150, -56], [ 124, -83],   // east coast → DMZ
-  [  92, -70], [  60, -56], [  44, -50], [  12, -44], [  -9, -39],   // the DMZ line west
+  [ -58, -24], [ -52,  -8], [ -36,   8],                             // Gimpo → Incheon
+  [ -42,  30], [ -25,  48], [ -22,  58], [ -45,  62],                // Asan Bay inlet
+  [ -77,  92], [ -70, 118], [ -62, 132], [ -45, 142],                // Taean peninsula, Anmyeondo
+  [ -38, 168], [ -50, 212], [ -55, 250], [ -59, 284],                // Gunsan, Byeonsan cliffs
+  [ -55, 306], [ -38, 334], [ -44, 362],                             // Mokpo → Ttangkkeut (SW tip)
+  [ -24, 358], [  -2, 352], [  12, 358], [  27, 362],                // Haenam → Goheung tip
+  [  33, 340], [  44, 304],                                          // Suncheon Bay
+  [  56, 318], [  66, 330], [  71, 308],                             // Yeosu peninsula
+  [  62, 292], [  82, 292], [  94, 290],                             // Gwangyang Bay, Sacheon
+  [ 106, 304], [ 118, 312], [ 126, 296],                             // Tongyeong
+  [ 138, 284], [ 150, 292], [ 162, 288], [ 172, 282],                // Masan Bay, Jinhae
+  [ 180, 276], [ 192, 264],                                          // Busan, Haeundae
+  [ 202, 246], [ 211, 232], [ 216, 205],                             // Gijang, Ulsan Bay
+  [ 222, 182], [ 212, 172], [ 230, 158],                             // Yeongil Bay + Homigot hook
+  [ 215, 118], [ 214,  62], [ 198,  10],                             // Yeongdeok, Uljin, Samcheok
+  [ 178, -26], [ 143, -71], [ 122,-116],                             // Gangneung, Sokcho, Goseong
+  [  95, -98], [  60, -88], [  18, -79],                             // DMZ: Hwacheon, Cheorwon
+  [  -8, -60], [ -28, -45], [ -52, -38],                             // DMZ west → Imjin estuary
+];
+
+/* North of the DMZ the peninsula continues — rendered as empty hill country so
+   South Korea doesn't read as an island. No cities, no labels. */
+const NORTH = [
+  [ -71, -22], [ -80, -70], [ -78,-134], [ 130,-134], [ 122,-116],
+  [  95, -98], [  60, -88], [  18, -79], [  -8, -60], [ -28, -45], [ -52, -38],
 ];
 
 /* Mountain ranges, as spines the terrain rises along (kilometres).
    Taebaek runs down the east coast; Sobaek branches south-west to Jirisan. */
-const TAEBAEK = [[128,-78],[148,-40],[163,  6],[176, 52],[186,100],[194,148],[200,196]];
+const TAEBAEK = [[118,-110],[128,-78],[148,-40],[163,  6],[172, 52],[178,100],[182,148],[184,190]];
 const SOBAEK  = [[186,110],[160,140],[130,168],[100,200],[ 70,232],[ 46,262]];
+
+/* Named peaks at their real locations and heights — the terrain rises to meet
+   each one, so the famous mountains are where (and as tall as) they should be.
+   [x km, z km, height m, radius km] */
+const PEAKS = [
+  [ 130, -63, 1708, 7],   // Seoraksan
+  [ 144, -40, 1563, 7],   // Odaesan
+  [  93,  20, 1288, 6],   // Chiaksan
+  [ 166,   8, 1567, 7],   // Taebaeksan
+  [ 131,  65, 1440, 6],   // Sobaeksan
+  [  77, 113, 1058, 6],   // Songnisan
+  [  67, 188, 1614, 7],   // Deogyusan
+  [  99, 192, 1430, 6],   // Gayasan
+  [  65, 245, 1915, 9],   // Jirisan
+  [ 151, 170, 1193, 6],   // Palgongsan, above Daegu
+  [  -1, 269, 1187, 5],   // Mudeungsan, above Gwangju
+  [ -10, 230,  763, 5],   // Naejangsan
+];
+
+/* Major islands, as ellipses in the terrain: [x, z, rx, rz, peak m] */
+const ISLANDS = [
+  [ -68, -14,  7,  9, 472],   // Ganghwado (Manisan)
+  [ 142, 304, 11, 13, 585],   // Geojedo
+  [  89, 305,  8,  9, 786],   // Namhaedo
+  [ -52, 342,  8,  9, 485],   // Jindo
+  [ -20, 376,  6,  6, 644],   // Wando
+];
+
+/* Far out in the East Sea */
+const ULLEUNG = { x: 344, z: 5, rKm: 5, peakM: 984 };
+const DOKDO   = { x: 433, z: 34 };
 
 /* Jeju island (kilometres, centred on Hallasan) */
 const JEJU = { cx: -35, cz: 462, rx: 36, rz: 18, peakM: 1947 };
@@ -357,7 +409,15 @@ function seededRng(seed) {
 function mainlandHeight(wx, wz) {
   const kx = wx / KM, kz = wz / KM;
   const sd = coastSDF(kx, kz);
-  if (sd > 0) return -mv(80) - Math.min(mv(400), sd * mv(20));   // seafloor
+  if (sd > 0) {
+    // North of the DMZ the peninsula continues as anonymous hill country
+    if (pointInPolygon(kx, kz, NORTH)) {
+      const inland = distToPolyline(kx, kz, NORTH, true);
+      const hills = fbm(kx * 0.05, kz * 0.05, 3);
+      return Math.max(mv(8), mv(120 + hills * 420) * smoothstep(0, 5, inland));
+    }
+    return -mv(80) - Math.min(mv(400), sd * mv(20));   // seafloor
+  }
 
   const inland = -sd;
   const coastFade = smoothstep(0, 6, inland);        // 6 km ramp up from the shore
@@ -375,6 +435,12 @@ function mainlandHeight(wx, wz) {
   const dS = distToPolyline(kx, kz, SOBAEK, false);
   metres += (1 - smoothstep(4, 34, dS)) * (620 + rough * 520);
 
+  // The named peaks rise out of whatever relief is already there
+  for (const [px2, pz2, hM, rK] of PEAKS) {
+    const d = Math.hypot(kx - px2, kz - pz2);
+    if (d < rK * 3) metres = Math.max(metres, hM * Math.exp(-(d * d) / (2 * rK * rK)));
+  }
+
   return Math.max(mv(8), mv(metres) * coastFade);
 }
 
@@ -385,6 +451,15 @@ const BASINS = CITIES.filter(c => c.urbanR > 0).map(c => ({
 
 function heightAt(wx, wz) {
   let y = mainlandHeight(wx, wz);
+  const kx = wx / KM, kz = wz / KM;
+  for (const [ix, iz, rx, rz, peak] of ISLANDS) {
+    const n = Math.hypot((kx - ix) / rx, (kz - iz) / rz);
+    if (n < 1) {
+      const t = 1 - n;
+      y = Math.max(y, mv(30 + Math.pow(t, 1.5) * peak) * smoothstep(0, 0.12, t)
+                      + fbm(kx * 0.5 + 3, kz * 0.5) * mv(60) * t);
+    }
+  }
   if (y <= 0) return y;   // offshore — city basins must never lift the seafloor
   for (const b of BASINS) {
     const d = Math.hypot(wx - b.x, wz - b.z);
@@ -421,6 +496,8 @@ function groundAt(wx, wz) {
   const j = jejuHeight(wx, wz);
   if (j > g) g = j;
   if (Math.hypot(wx / KM - AIRPORT.cx, wz / KM - AIRPORT.cz) < AIRPORT.rKm) g = Math.max(g, mv(12));
+  const du = Math.hypot(wx / KM - ULLEUNG.x, wz / KM - ULLEUNG.z);
+  if (du < ULLEUNG.rKm) g = Math.max(g, mv(ULLEUNG.peakM) * (1 - du / ULLEUNG.rKm));
   return g;
 }
 
@@ -467,9 +544,9 @@ function finishTerrain(geo) {
   return new THREE.Mesh(ni, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
 }
 
-{ // mainland
-  const x0 = -110 * KM, x1 = 250 * KM, z0 = -110 * KM, z1 = 400 * KM;
-  const geo = new THREE.PlaneGeometry(x1 - x0, z1 - z0, 380, 480).rotateX(-Math.PI / 2);
+{ // mainland (plus the empty hills north of the DMZ)
+  const x0 = -120 * KM, x1 = 265 * KM, z0 = -135 * KM, z1 = 400 * KM;
+  const geo = new THREE.PlaneGeometry(x1 - x0, z1 - z0, 400, 520).rotateX(-Math.PI / 2);
   geo.translate((x0 + x1) / 2, 0, (z0 + z1) / 2);
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) p.setY(i, heightAt(p.getX(i), p.getZ(i)));
@@ -896,7 +973,7 @@ function pagoda(g, x, y, z, tiers, baseM) {
   // Gwangan Bridge — 7.4 km twin-deck suspension span across the bay
   {
     // Sits offshore in Suyeong Bay, on a single deck ~60 m above the water
-    const bx = cx + 8.6 * KM, deckY = mv(60);
+    const bx = cx + 10.2 * KM, deckY = mv(60);
     const z0 = cz - 2.6 * KM, z1 = cz + 4.4 * KM, span = z1 - z0, mid = (z0 + z1) / 2;
     const deck = new THREE.Mesh(new THREE.BoxGeometry(sh(120), sv(20), span), MAT.concrete);
     deck.position.set(bx, deckY, mid); scene.add(deck);
@@ -939,7 +1016,7 @@ function pagoda(g, x, y, z, tiers, baseM) {
 
   // Port of Busan — quay, gantry cranes, container stacks
   {
-    const px = cx - 2.5 * KM, pz = cz + 4.2 * KM, port = [];
+    const px = cx - 3.5 * KM, pz = cz + 9 * KM, port = [];
     const quayY = sv(20);
     pushBox(port, 4 * KM, quayY, 0.7 * KM, px, 0, pz, 0x8d9097);          // quay apron
     const crng = seededRng(13), cols = [0xc0563e, 0x3f7ab8, 0x4f9e5c, 0xc9a83f, 0xb5b9be];
@@ -1069,12 +1146,9 @@ function pagoda(g, x, y, z, tiers, baseM) {
   const top = hall(g, 26, 18, 0, 0, 0);
   g.position.set(cx + 2.6 * KM, gy, cz + 1.5 * KM); scene.add(g);
   markLabel('Gwangju Pavilion', cx + 2.6 * KM, gy + top, cz + 1.5 * KM);
-  // Mudeungsan (1187 m) rising immediately east of the city
-  const mdx = cx + 9.5 * KM, mdz = cz + 1 * KM;
-  const mdBase = heightAt(mdx, mdz);
-  const mud = new THREE.Mesh(new THREE.ConeGeometry(tw(5200), mv(1187), 9), MAT.hill);
-  mud.position.set(mdx, mdBase + mv(1187) / 2 - 1, mdz); scene.add(mud);
-  markLabel('Mudeungsan', mdx, mdBase + mv(1187) + 4, mdz);
+  // Mudeungsan (1187 m) is part of the terrain itself now — see PEAKS
+  const mdx = -1 * KM, mdz = 269 * KM;
+  markLabel('Mudeungsan', mdx, heightAt(mdx, mdz) + 6, mdz);
   cityLabel('GWANGJU', cx, gy + 50, cz);
 }
 
@@ -1145,7 +1219,7 @@ function pagoda(g, x, y, z, tiers, baseM) {
   cityBlocks(boxes, { cx, cz, ground: gy, cols: 9, rows: 8, blockM: 700,
                       hMinM: 12, hMaxM: 45, seed: 41, density: 0.75 });
   scene.add(meshFromBoxes(boxes));
-  const sx = 128 * KM, sz = -60 * KM;
+  const sx = 130 * KM, sz = -63 * KM;
   markLabel('Seoraksan', sx, heightAt(sx, sz) + 8, sz);
   cityLabel('SOKCHO', cx, gy + 42, cz);
 }
@@ -1275,6 +1349,28 @@ function pagoda(g, x, y, z, tiers, baseM) {
 }
 
 /* ==========================================================================
+   EAST SEA — Ulleungdo and Dokdo, far off the east coast
+   ========================================================================== */
+{
+  const ux = ULLEUNG.x * KM, uz = ULLEUNG.z * KM;
+  const isle = new THREE.Mesh(new THREE.ConeGeometry(ULLEUNG.rKm * KM, mv(ULLEUNG.peakM), 12), MAT.hill);
+  isle.position.set(ux, mv(ULLEUNG.peakM) / 2 - 1, uz); scene.add(isle);
+  const rim = new THREE.Mesh(new THREE.ConeGeometry(1.6 * KM, mv(300), 9), MAT.stone);
+  rim.position.set(ux, mv(ULLEUNG.peakM) - 1 + mv(120), uz); scene.add(rim);
+  markLabel('Ulleungdo', ux, mv(ULLEUNG.peakM) + mv(280), uz);
+
+  const dx = DOKDO.x * KM, dz = DOKDO.z * KM;
+  for (const [ox, oz, r, h] of [[-1.2, 0, 1.6, 169], [1.4, 0.6, 1.2, 99]]) {
+    const rock = new THREE.Mesh(new THREE.ConeGeometry(r, mv(h), 7), MAT.stone);
+    rock.position.set(dx + ox, mv(h) / 2 - 0.4, dz + oz); scene.add(rock);
+  }
+  markLabel('Dokdo', dx, mv(169) + 10, dz);
+}
+
+/* Jirisan — the mainland's highest peak, risen from the PEAKS table */
+markLabel('Jirisan', 65 * KM, heightAt(65 * KM, 245 * KM) + 8, 245 * KM);
+
+/* ==========================================================================
    FORESTS — a single InstancedMesh of conifers across the hill country
    ========================================================================== */
 {
@@ -1294,8 +1390,8 @@ function pagoda(g, x, y, z, tiers, baseM) {
       h = jejuHeight(wx, wz);
       if (h < mv(150) || h > mv(1400)) continue;
     } else {
-      wx = (-100 + rng() * 340) * KM;
-      wz = (-100 + rng() * 480) * KM;
+      wx = (-115 + rng() * 380) * KM;
+      wz = (-130 + rng() * 528) * KM;
       h = heightAt(wx, wz);
       if (h < mv(220) || h > mv(1250)) continue;
     }
@@ -1364,13 +1460,21 @@ const hudCity  = document.getElementById('hudCity');
 
 /* Minimap (kilometre space) */
 const mini = document.getElementById('miniCanvas'), mctx = mini.getContext('2d');
-const MB = { x0: -100, x1: 235, z0: -100, z1: 490 };
+const MB = { x0: -115, x1: 255, z0: -135, z1: 495 };
 function toMini(kx, kz) {
   return [(kx - MB.x0) / (MB.x1 - MB.x0) * mini.width,
           (kz - MB.z0) / (MB.z1 - MB.z0) * mini.height];
 }
 function drawMinimap() {
   mctx.fillStyle = '#14364f'; mctx.fillRect(0, 0, mini.width, mini.height);
+  const sxp = mini.width / (MB.x1 - MB.x0), szp = mini.height / (MB.z1 - MB.z0);
+
+  // North Korea, dimmed
+  mctx.beginPath();
+  NORTH.forEach(([kx, kz], i) => { const [x, y] = toMini(kx, kz); i ? mctx.lineTo(x, y) : mctx.moveTo(x, y); });
+  mctx.closePath();
+  mctx.fillStyle = '#3d5344'; mctx.fill();
+
   mctx.beginPath();
   COAST.forEach(([kx, kz], i) => { const [x, y] = toMini(kx, kz); i ? mctx.lineTo(x, y) : mctx.moveTo(x, y); });
   mctx.closePath();
@@ -1378,8 +1482,14 @@ function drawMinimap() {
   mctx.strokeStyle = 'rgba(255,255,255,0.3)'; mctx.lineWidth = 1; mctx.stroke();
 
   const [jx, jy] = toMini(JEJU.cx, JEJU.cz);
-  mctx.beginPath(); mctx.ellipse(jx, jy, 9, 4.5, 0, 0, Math.PI * 2);
+  mctx.beginPath(); mctx.ellipse(jx, jy, JEJU.rx * sxp, JEJU.rz * szp, 0, 0, Math.PI * 2);
   mctx.fillStyle = '#79ad63'; mctx.fill(); mctx.stroke();
+
+  for (const [ix, iz, rx, rz] of ISLANDS) {
+    const [x, y] = toMini(ix, iz);
+    mctx.beginPath(); mctx.ellipse(x, y, Math.max(2, rx * sxp), Math.max(2, rz * szp), 0, 0, Math.PI * 2);
+    mctx.fillStyle = '#79ad63'; mctx.fill();
+  }
 
   mctx.fillStyle = '#fff';
   for (const c of CITIES) {
@@ -1388,7 +1498,8 @@ function drawMinimap() {
   }
 
   const [ax, ay] = toMini(aircraft.position.x / KM, aircraft.position.z / KM);
-  mctx.save(); mctx.translate(ax, ay); mctx.rotate(-yaw + Math.PI);
+  // yaw 0 faces north (-Z), which is up on the map, so the arrow needs -yaw only
+  mctx.save(); mctx.translate(ax, ay); mctx.rotate(-yaw);
   mctx.fillStyle = '#ff5b5b'; mctx.beginPath();
   mctx.moveTo(0, -7); mctx.lineTo(5, 5); mctx.lineTo(-5, 5); mctx.closePath(); mctx.fill();
   mctx.strokeStyle = 'rgba(0,0,0,0.45)'; mctx.stroke(); mctx.restore();
