@@ -15,8 +15,7 @@
     background: rgba(10,15,25,0.42); border-radius: 10px;
     font-size: 13px; line-height: 1.55; pointer-events: none;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255,255,255,0.08);
-    min-width: 180px;
+    border: 1px solid rgba(255,255,255,0.08); min-width: 200px;
   }
   #hud .row { display: flex; justify-content: space-between; gap: 16px; }
   #hud .label { opacity: 0.55; letter-spacing: 0.08em; font-size: 11px; }
@@ -32,10 +31,8 @@
   #minimap .cap { font-size: 10px; opacity: 0.6; text-align: center;
     letter-spacing: 0.14em; margin-top: 4px; }
 
-  #flyto {
-    position: fixed; bottom: 18px; left: 18px;
-    display: flex; gap: 6px; flex-wrap: wrap; max-width: 48vw;
-  }
+  #flyto { position: fixed; bottom: 18px; left: 18px;
+    display: flex; gap: 6px; flex-wrap: wrap; max-width: 46vw; }
   #flyto button {
     padding: 7px 12px; background: rgba(10,15,25,0.42);
     color: #fff; border: 1px solid rgba(255,255,255,0.12); border-radius: 18px;
@@ -49,7 +46,7 @@
   #instructions {
     position: fixed; bottom: 18px; right: 18px; padding: 12px 14px;
     background: rgba(10,15,25,0.42); border-radius: 10px;
-    font-size: 12px; line-height: 1.55; max-width: 260px;
+    font-size: 12px; line-height: 1.55; max-width: 270px;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     border: 1px solid rgba(255,255,255,0.08);
   }
@@ -68,16 +65,17 @@
     animation: fadeIn 0.6s ease;
   }
   #splash .card { text-align: center; padding: 40px 60px; color: #1a2740; }
-  #splash h1 { font-size: 38px; margin-bottom: 6px; font-weight: 700;
-    letter-spacing: -0.01em; }
+  #splash h1 { font-size: 38px; margin-bottom: 6px; font-weight: 700; letter-spacing: -0.01em; }
   #splash .sub { opacity: 0.7; margin-bottom: 26px; font-size: 15px; }
   #splash button {
-    padding: 12px 28px; background: #1a2740; color: #fff;
-    border: none; border-radius: 24px; font-size: 15px; cursor: pointer;
-    font-weight: 600; font-family: inherit;
-    transition: transform 0.15s, background 0.15s;
+    padding: 12px 28px; background: #1a2740; color: #fff; border: none;
+    border-radius: 24px; font-size: 15px; cursor: pointer; font-weight: 600;
+    font-family: inherit; transition: transform 0.15s, background 0.15s;
   }
   #splash button:hover { background: #2b3a5c; transform: translateY(-1px); }
+  #loading { position: fixed; inset: 0; z-index: 90; display: flex;
+    align-items: center; justify-content: center; background: #b8dcfa; color: #1a2740;
+    font-size: 15px; }
 
   @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
   .hidden { display: none !important; }
@@ -94,14 +92,14 @@
 </div>
 
 <div id="hud" class="hidden">
-  <div class="row"><span class="label">SPEED</span><span><span class="value" id="hudSpeed">0</span> kt</span></div>
+  <div class="row"><span class="label">SPEED</span><span><span class="value" id="hudSpeed">0</span> km/h</span></div>
   <div class="row"><span class="label">ALT</span><span><span class="value" id="hudAlt">0</span> m</span></div>
   <div class="row"><span class="label">HDG</span><span><span class="value" id="hudHdg">0</span>°</span></div>
   <div class="row"><span class="label">NEAR</span><span class="value" id="hudCity">—</span></div>
 </div>
 
 <div id="minimap" class="hidden">
-  <canvas id="miniCanvas" width="170" height="230"></canvas>
+  <canvas id="miniCanvas" width="168" height="248"></canvas>
   <div class="cap">SOUTH KOREA</div>
 </div>
 
@@ -113,647 +111,1099 @@
   <div><kbd>A</kbd> <kbd>D</kbd> or <kbd>←</kbd> <kbd>→</kbd> — steer (bank)</div>
   <div><kbd>↑</kbd> / <kbd>↓</kbd> — pitch up / down</div>
   <div>Click canvas — mouse look (optional)</div>
-  <div style="margin-top: 6px; opacity: 0.6">Auto-forward is on for a scenic flight.</div>
+  <div style="margin-top: 6px; opacity: 0.6">Auto-forward is on. Use the fly-to buttons to hop between cities — Korea is ~450 km long.</div>
 </div>
 
-<script type="importmap">
-{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
-</script>
+<!-- Three.js is loaded as a classic (UMD) script on purpose: a plain <script> tag
+     works when this page is opened straight from disk via file://, whereas ES
+     modules + import maps are blocked by CORS in that case. Version is pinned so
+     the CDN URL stays stable. -->
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 
-<script type="module">
-import * as THREE from 'three';
+<script>
+if (!window.THREE) {
+  document.getElementById('splash').innerHTML =
+    '<div class="card"><h1>Could not load Three.js</h1>' +
+    '<div class="sub">This page needs one-time internet access to fetch Three.js from the CDN.</div></div>';
+  throw new Error('Three.js failed to load');
+}
 
 /* ==========================================================================
-   TUNABLE CONFIG — tweak these to change the flight feel and world scale
+   SCALE
+   --------------------------------------------------------------------------
+   Geography is at true scale: city positions and the coastline are real
+   kilometre offsets from Seoul, so the country's proportions are correct
+   (~300 km east-west, ~460 km north-south).
+
+   Heights are deliberately exaggerated — at 1:1 a 555 m tower is invisible
+   next to a 450 km country. Each exaggeration is a separate, tunable factor:
+
+     KM    world units per kilometre       (horizontal, true scale)
+     VEX   terrain height exaggeration     (mountains)
+     SVEX  structure height exaggeration   (modern towers, buildings)
+     SHEX  slender-structure width boost   (so masts/towers aren't hairlines)
+     HVEX  heritage height exaggeration    (palaces, temples — small in life,
+     HHEX  heritage footprint exaggeration  boosted so they read from the air)
+
+   City layouts, runways and bridge spans use tw() — TRUE horizontal scale — so
+   a city covers the ground it really covers. Only heights, slender masts and
+   heritage sites are exaggerated. Helper functions take real metres, so every
+   landmark below is written with its actual real-world dimensions.
+   ========================================================================== */
+const KM   = 10;      // 1 km  = 10 world units  → 1 world unit = 100 m
+const VEX  = 5;       // Hallasan 1947 m → 97 units
+const SVEX = 14;      // Lotte World Tower 555 m → 78 units
+const SHEX = 3;
+const HVEX = 35;
+const HHEX = 25;      // Gyeongbokgung's courtyard ~115 m → 29 units
+
+const tw = m => m / 100;          // metres → world units, TRUE horizontal scale
+const mv = m => m * VEX  / 100;   // terrain metres  → world units
+const sv = m => m * SVEX / 100;   // structure metres → world units (vertical)
+const sh = m => m * SHEX / 100;   // chunky structure widths (decks, terminals)
+const mast = m => m * 12 / 100;   // very slender masts — a 10 m shaft would be a
+                                  // hairline at true scale, so it gets a bigger boost
+const hv = m => m * HVEX / 100;   // heritage metres  → world units (vertical)
+const hh = m => m * HHEX / 100;   // heritage metres  → world units (horizontal)
+
+/* ==========================================================================
+   FLIGHT + LOOK CONFIG — the main knobs for how the flight feels
    ========================================================================== */
 const CONFIG = {
-  // Flight dynamics
-  baseSpeed:      45,     // world-units / second (auto-forward starting speed)
-  maxSpeed:       140,
-  minSpeed:       18,
-  throttleRate:   45,     // units/s² for W/S
-  turnRate:       0.85,   // rad/s for A/D
-  pitchRate:      0.55,   // rad/s for arrow up/down
-  bankMax:        0.55,   // max roll angle when turning
-  bankSmoothing:  4.5,    // higher = snappier bank response
+  // Speeds are world units/s. Time runs ~100× faster than life so the country
+  // is crossable in about a minute; speedReadout converts back to the airspeed
+  // an aircraft doing this for real would be showing.
+  baseSpeed:      70,    // ≈ 250 km/h on the HUD — an easy sightseeing cruise
+  maxSpeed:      300,
+  minSpeed:       20,
+  throttleRate:   70,
+  speedReadout:  3.6,    // world units/s → km/h shown on the HUD
+  turnRate:      0.70,   // rad/s
+  pitchRate:     0.45,
+  bankMax:       0.55,   // max roll angle while turning
+  bankSmoothing: 4.0,
   mouseSensitivity: 0.0022,
-  startAltitude:  110,
-  minAGL:         4,      // minimum height above ground
+  startAltitude: 260,
+  minAGL:         12,    // never get closer than this to the ground
 
-  // World dimensions
-  seaSize:        4200,
-  terrainBounds:  { minX: -190, maxX: 380, minZ: -110, maxZ: 520 },
-  terrainSegs:    { w: 160, h: 180 },
-  mountainAmp:    75,     // baseline noise amplitude on land
-  taebaekBoost:   80,     // extra height on the eastern (Taebaek) side
+  fogNear:       1400,
+  fogFar:        7000,
+  skyTop:        0x5bb8f5,
+  skyHorizon:    0xffeec2,
 
-  // Aesthetics
-  fogNear:        260,
-  fogFar:         950,
-  skyTop:         0x6ec4ff,
-  skyHorizon:     0xffe9b0,
+  flyToDist:      85,    // how far short of a city the fly-to stops (8.5 km)
+  flyToAlt:       34,    // fly-to arrival altitude (3.4 km)
+  flyToDuration:  4.5,   // seconds
 };
 
 /* ==========================================================================
-   CITIES — edit x (east+) / z (south+) to reposition landmarks
-   Coordinates are roughly scaled from real lat/lng, Seoul at origin.
+   GEOGRAPHY — real kilometre offsets from Seoul (x = east, z = south)
+   Derived from latitude/longitude:  x = (lon − 127.0) × 88.8
+                                     z = (37.55 − lat) × 111
+   Edit these to move a city; everything else follows.
    ========================================================================== */
 const CITIES = [
-  { name: 'Seoul',    x:    0, z:    0, kind: 'seoul'   },
-  { name: 'Incheon',  x:  -38, z:   15, kind: 'airport' },
-  { name: 'Daejeon',  x:   53, z:  200, kind: 'city', scale: 0.75 },
-  { name: 'Daegu',    x:  205, z:  270, kind: 'city', scale: 0.8  },
-  { name: 'Gwangju',  x:  -12, z:  380, kind: 'city', scale: 0.75 },
-  { name: 'Gyeongju', x:  280, z:  275, kind: 'temple'  },
-  { name: 'Busan',    x:  270, z:  400, kind: 'busan'   },
-  { name: 'Jeju',     x:  -55, z:  590, kind: 'jeju'    },
+  { name: 'Seoul',    x:   -2, z:   -2, urbanR: 20, baseM:  40 },
+  { name: 'Incheon',  x:  -26, z:   10, urbanR: 12, baseM:  28 },
+  { name: 'Daejeon',  x:   34, z:  133, urbanR: 11, baseM:  70 },
+  { name: 'Daegu',    x:  142, z:  186, urbanR: 12, baseM:  50 },
+  { name: 'Gwangju',  x:  -13, z:  266, urbanR: 11, baseM:  70 },
+  { name: 'Gyeongju', x:  198, z:  188, urbanR:  9, baseM:  50 },
+  { name: 'Busan',    x:  185, z:  263, urbanR: 13, baseM:  32 },
+  { name: 'Jeju',     x:  -42, z:  449, urbanR:  0, baseM:   0 },  // island, own mesh
+];
+const city = Object.fromEntries(CITIES.map(c => [c.name, c]));
+
+/* South Korea's coastline, clockwise from the north-west, in kilometres.
+   Drives the terrain silhouette and the minimap. */
+const COAST = [
+  [ -53, -28], [ -46,  10], [ -62,  36], [ -74,  62], [ -77,  89],   // Gyeonggi + Taean
+  [ -62, 112], [ -52, 138], [ -35, 174], [ -44, 200], [ -58, 232],   // west coast, Gunsan
+  [ -52, 262], [ -60, 292], [ -54, 306], [ -50, 330], [ -44, 361],   // Mokpo + south-west tip
+  [ -10, 348], [  22, 338], [  50, 330], [  66, 312], [  96, 318],   // south coast, Yeosu
+  [ 127, 300], [ 152, 292], [ 172, 282], [ 185, 272], [ 197, 250],   // Tongyeong → Busan
+  [ 205, 223], [ 209, 196], [ 210, 170], [ 205, 138], [ 197, 104],   // Ulsan → Pohang
+  [ 190,  70], [ 182,  32], [ 169, -22], [ 150, -56], [ 124, -83],   // east coast → DMZ
+  [  92, -70], [  60, -56], [  44, -50], [  12, -44], [  -9, -39],   // the DMZ line west
 ];
 
-/* Peninsula outline (clockwise, X east / Z south).
-   Used for terrain shaping AND minimap rendering. */
-const PENINSULA = [
-  [-70,-40], [-20,-55], [ 50,-60], [120,-50], [180,-30],
-  [230, 10], [280, 70], [320,140], [340,220], [340,300],
-  [325,370], [295,420], [250,450], [180,460], [ 90,455],
-  [ 20,445], [-30,425], [-55,385], [-40,325], [-60,270],
-  [-95,215], [-100,150], [-90, 80], [-95, 20],
-];
+/* Mountain ranges, as spines the terrain rises along (kilometres).
+   Taebaek runs down the east coast; Sobaek branches south-west to Jirisan. */
+const TAEBAEK = [[128,-78],[148,-40],[163,  6],[176, 52],[186,100],[194,148],[200,196]];
+const SOBAEK  = [[186,110],[160,140],[130,168],[100,200],[ 70,232],[ 46,262]];
+
+/* Jeju island (kilometres, centred on Hallasan) */
+const JEJU = { cx: -35, cz: 462, rx: 36, rz: 18, peakM: 1947 };
+/* Incheon airport sits on its own offshore island, like the real Yeongjong-do */
+const AIRPORT = { cx: -52, cz: 14, rKm: 7 };
 
 /* ==========================================================================
-   SCENE, CAMERA, RENDERER
+   SCENE / CAMERA / RENDERER
    ========================================================================== */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(CONFIG.skyTop);
 scene.fog = new THREE.Fog(CONFIG.skyHorizon, CONFIG.fogNear, CONFIG.fogFar);
 
-const camera = new THREE.PerspectiveCamera(
-  72, window.innerWidth / window.innerHeight, 0.5, 2400
-);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.5, 30000);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
-/* ==========================================================================
-   LIGHTING — soft hemisphere plus a warm directional sun
-   ========================================================================== */
-scene.add(new THREE.HemisphereLight(0xc9e4ff, 0x4a3a24, 0.85));
-const sun = new THREE.DirectionalLight(0xfff2cc, 1.15);
-sun.position.set(240, 380, 160);
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x4a4030, 0.9));
+const sun = new THREE.DirectionalLight(0xfff4d6, 1.05);
+sun.position.set(3000, 5000, 2000);
 scene.add(sun);
 
-/* ==========================================================================
-   SKY DOME — vertical gradient shader (no textures)
-   ========================================================================== */
+/* Sky dome — vertical gradient, unaffected by fog */
 {
-  const skyGeo = new THREE.SphereGeometry(1800, 32, 16);
-  const skyMat = new THREE.ShaderMaterial({
-    uniforms: {
-      topColor:    { value: new THREE.Color(CONFIG.skyTop) },
-      bottomColor: { value: new THREE.Color(CONFIG.skyHorizon) },
-    },
-    vertexShader: /*glsl*/`
-      varying vec3 vWorld;
-      void main() { vWorld = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: /*glsl*/`
-      uniform vec3 topColor; uniform vec3 bottomColor; varying vec3 vWorld;
-      void main() {
-        float h = clamp((vWorld.y / 1200.0) + 0.18, 0.0, 1.0);
-        h = pow(h, 0.75);
-        gl_FragColor = vec4(mix(bottomColor, topColor, h), 1.0);
-      }`,
-    side: THREE.BackSide, depthWrite: false,
+  const geo = new THREE.SphereGeometry(20000, 32, 16);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { topColor: { value: new THREE.Color(CONFIG.skyTop) },
+                bottomColor: { value: new THREE.Color(CONFIG.skyHorizon) } },
+    vertexShader: `varying vec3 vW; void main(){ vW = position;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `uniform vec3 topColor, bottomColor; varying vec3 vW;
+      void main(){ float h = clamp(vW.y/13000.0 + 0.15, 0.0, 1.0);
+        gl_FragColor = vec4(mix(bottomColor, topColor, pow(h,0.72)), 1.0); }`,
+    side: THREE.BackSide, depthWrite: false, fog: false,
   });
-  scene.add(new THREE.Mesh(skyGeo, skyMat));
+  scene.add(new THREE.Mesh(geo, mat));
 }
 
-/* ==========================================================================
-   SEA — a single flat blue plane just below the underwater terrain
-   ========================================================================== */
+/* Sea */
 {
-  const seaGeo = new THREE.PlaneGeometry(CONFIG.seaSize, CONFIG.seaSize);
-  seaGeo.rotateX(-Math.PI / 2);
-  const seaMat = new THREE.MeshLambertMaterial({ color: 0x2f6ea9 });
-  const sea = new THREE.Mesh(seaGeo, seaMat);
-  sea.position.y = -0.4;
+  const geo = new THREE.PlaneGeometry(60000, 60000).rotateX(-Math.PI / 2);
+  const sea = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x2f6ea9 }));
+  sea.position.set(80 * KM, -0.5, 200 * KM);
   scene.add(sea);
 }
 
 /* ==========================================================================
-   GEOMETRY / MATH HELPERS
+   MATH HELPERS
    ========================================================================== */
 function pointInPolygon(px, py, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i][0], yi = poly[i][1];
-    const xj = poly[j][0], yj = poly[j][1];
-    const hit = ((yi > py) !== (yj > py)) &&
-      (px < (xj - xi) * (py - yi) / (yj - yi + 1e-9) + xi);
-    if (hit) inside = !inside;
+    const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+    if (((yi > py) !== (yj > py)) &&
+        (px < (xj - xi) * (py - yi) / (yj - yi + 1e-9) + xi)) inside = !inside;
   }
   return inside;
 }
-
-function distanceToPolygon(px, py, poly) {
-  let minD = Infinity;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const ax = poly[j][0], ay = poly[j][1];
-    const bx = poly[i][0], by = poly[i][1];
-    const dx = bx - ax, dy = by - ay;
-    const len2 = dx * dx + dy * dy;
-    let t = ((px - ax) * dx + (py - ay) * dy) / (len2 + 1e-9);
-    t = Math.max(0, Math.min(1, t));
-    const cx = ax + t * dx, cy = ay + t * dy;
-    const ddx = px - cx, ddy = py - cy;
-    const d = Math.hypot(ddx, ddy);
-    if (d < minD) minD = d;
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  let t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy + 1e-9);
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+function distToPolyline(px, py, line, closed) {
+  let min = Infinity;
+  const n = line.length;
+  const last = closed ? n : n - 1;
+  for (let i = 0; i < last; i++) {
+    const a = line[i], b = line[(i + 1) % n];
+    const d = distToSegment(px, py, a[0], a[1], b[0], b[1]);
+    if (d < min) min = d;
   }
-  return minD;
+  return min;
+}
+/* Signed distance to the coastline in km — negative inland */
+function coastSDF(kx, kz) {
+  const d = distToPolyline(kx, kz, COAST, true);
+  return pointInPolygon(kx, kz, COAST) ? -d : d;
 }
 
-// Signed distance: negative inside the peninsula, positive outside
-function sdfPeninsula(x, z) {
-  const d = distanceToPolygon(x, z, PENINSULA);
-  return pointInPolygon(x, z, PENINSULA) ? -d : d;
-}
-
-// Lightweight value noise + fBm (deterministic, no dependencies)
-function hash2(x, y) {
-  const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-  return s - Math.floor(s);
-}
+function hash2(x, y) { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
 function noise2(x, y) {
-  const xi = Math.floor(x), yi = Math.floor(y);
-  const xf = x - xi, yf = y - yi;
-  const u = xf * xf * (3 - 2 * xf);
-  const v = yf * yf * (3 - 2 * yf);
-  const a = hash2(xi,     yi    );
-  const b = hash2(xi + 1, yi    );
-  const c = hash2(xi,     yi + 1);
-  const d = hash2(xi + 1, yi + 1);
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
   return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
 }
-function fbm(x, y, octaves = 4) {
-  let v = 0, amp = 1, freq = 1, sum = 0;
-  for (let i = 0; i < octaves; i++) {
-    v += amp * noise2(x * freq, y * freq);
-    sum += amp; freq *= 2; amp *= 0.5;
-  }
+function fbm(x, y, oct = 4) {
+  let v = 0, amp = 1, f = 1, sum = 0;
+  for (let i = 0; i < oct; i++) { v += amp * noise2(x * f, y * f); sum += amp; f *= 2; amp *= 0.5; }
   return v / sum;
 }
-function smoothstep(a, b, x) {
-  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
-
-/* Central terrain height function. Called for both the terrain mesh and
-   for ground-clamping the aircraft. Deterministic. */
-function heightAt(x, z) {
-  const sd = sdfPeninsula(x, z);
-  if (sd > 0) {
-    // Just offshore: seafloor slopes down; hidden by sea plane at y = -0.4
-    return -3 - Math.min(12, sd * 0.25);
-  }
-  const inland = -sd;                          // distance from coast, inward
-  const coastFade = smoothstep(0, 22, inland); // smooth ramp so coast isn't a cliff
-  const base  = fbm(x * 0.008, z * 0.008, 4);
-  const ridge = fbm(x * 0.023 + 100, z * 0.023, 3);
-
-  // Taebaek mountain range — rises along the east side, softens toward the far south
-  const eastFactor  = smoothstep(120, 320, x);
-  const southTaper  = 1 - smoothstep(360, 460, z);
-  const taebaek     = eastFactor * southTaper * CONFIG.taebaekBoost * (0.4 + 0.6 * ridge);
-
-  let y = (base * 0.55 + ridge * 0.45) * CONFIG.mountainAmp + taebaek;
-  y *= coastFade;
-  return Math.max(0.5, y);
-}
-
-/* Color a terrain face by its average height (produces the flat-shaded look) */
-const _tmpColor = new THREE.Color();
-function colorForHeight(out, y) {
-  if (y < 1.2)  out.setRGB(0.86, 0.83, 0.62);   // sand / beach
-  else if (y < 8)   out.setRGB(0.56, 0.74, 0.36); // lowland green
-  else if (y < 24)  out.setRGB(0.42, 0.63, 0.28); // rolling hills
-  else if (y < 55)  out.setRGB(0.36, 0.48, 0.30); // forested slope
-  else if (y < 95)  out.setRGB(0.52, 0.47, 0.40); // exposed rock
-  else if (y < 140) out.setRGB(0.68, 0.63, 0.58); // high mountain
-  else              out.setRGB(0.94, 0.94, 0.96); // snow cap
-}
-
-/* ==========================================================================
-   MAINLAND TERRAIN
-   ========================================================================== */
-function buildTerrain() {
-  const b = CONFIG.terrainBounds;
-  const w = b.maxX - b.minX;
-  const h = b.maxZ - b.minZ;
-  const geo = new THREE.PlaneGeometry(w, h, CONFIG.terrainSegs.w, CONFIG.terrainSegs.h);
-  geo.rotateX(-Math.PI / 2);
-  geo.translate((b.minX + b.maxX) / 2, 0, (b.minZ + b.maxZ) / 2);
-
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    pos.setY(i, heightAt(pos.getX(i), pos.getZ(i)));
-  }
-
-  // Non-indexed so each triangle gets its own vertices → clean flat colors
-  const ni = geo.toNonIndexed();
-  const p = ni.attributes.position;
-  const colors = new Float32Array(p.count * 3);
-  for (let i = 0; i < p.count; i += 3) {
-    const yAvg = (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3;
-    colorForHeight(_tmpColor, yAvg);
-    for (let k = 0; k < 3; k++) {
-      colors[(i + k) * 3 + 0] = _tmpColor.r;
-      colors[(i + k) * 3 + 1] = _tmpColor.g;
-      colors[(i + k) * 3 + 2] = _tmpColor.b;
-    }
-  }
-  ni.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  ni.computeVertexNormals();
-
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-  return new THREE.Mesh(ni, mat);
-}
-scene.add(buildTerrain());
-
-/* ==========================================================================
-   JEJU ISLAND — separate mesh with Hallasan volcano cone
-   ========================================================================== */
-function buildJeju() {
-  const cx = -55, cz = 590;
-  const size = 130, segs = 44, R = 48;
-  const geo = new THREE.PlaneGeometry(size, size, segs, segs);
-  geo.rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const lx = pos.getX(i), lz = pos.getZ(i);
-    const r = Math.hypot(lx, lz);
-    let y;
-    if (r < R) {
-      const t = 1 - r / R;
-      y = t * 6 + Math.pow(t, 2.6) * 70;
-      y += fbm(lx * 0.04 + 5, lz * 0.04) * 2.5 * (r / R);
-    } else {
-      y = -3 - Math.min(10, (r - R) * 0.3);
-    }
-    pos.setY(i, y);
-  }
-  const ni = geo.toNonIndexed();
-  const p = ni.attributes.position;
-  const colors = new Float32Array(p.count * 3);
-  for (let i = 0; i < p.count; i += 3) {
-    const y = (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3;
-    colorForHeight(_tmpColor, y);
-    for (let k = 0; k < 3; k++) {
-      colors[(i + k) * 3 + 0] = _tmpColor.r;
-      colors[(i + k) * 3 + 1] = _tmpColor.g;
-      colors[(i + k) * 3 + 2] = _tmpColor.b;
-    }
-  }
-  ni.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  ni.computeVertexNormals();
-  const mesh = new THREE.Mesh(ni, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
-  mesh.position.set(cx, 0, cz);
-  return mesh;
-}
-scene.add(buildJeju());
-
-/* ==========================================================================
-   CITY LANDMARKS — small low-poly clusters per location
-   ========================================================================== */
-const MAT = {
-  concrete: new THREE.MeshLambertMaterial({ color: 0xbdc0c6, flatShading: true }),
-  glass:    new THREE.MeshLambertMaterial({ color: 0x7aa8c9, flatShading: true }),
-  dark:     new THREE.MeshLambertMaterial({ color: 0x3a3f47, flatShading: true }),
-  roof:     new THREE.MeshLambertMaterial({ color: 0x8b3a2e, flatShading: true }),
-  wood:     new THREE.MeshLambertMaterial({ color: 0x6b4325, flatShading: true }),
-  strip:    new THREE.MeshLambertMaterial({ color: 0x2b2e35, flatShading: true }),
-  red:      new THREE.MeshLambertMaterial({ color: 0xd23a35, flatShading: true }),
-  white:    new THREE.MeshLambertMaterial({ color: 0xf0efe8, flatShading: true }),
-  hill:     new THREE.MeshLambertMaterial({ color: 0x3d5c34, flatShading: true }),
-};
-
-// Small deterministic PRNG so clusters are stable across reloads
+function smoothstep(a, b, x) { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+function lerp(a, b, t) { return a + (b - a) * t; }
 function seededRng(seed) {
   let s = Math.abs(Math.sin(seed) * 10000) % 1;
   return () => { s = (s * 9301 + 49297) % 233280 / 233280; return s; };
 }
 
-function buildingCluster(count, hMin, hMax, spread, seed) {
-  const g = new THREE.Group();
-  const rng = seededRng(seed);
-  for (let i = 0; i < count; i++) {
-    const w = 3 + rng() * 4;
-    const d = 3 + rng() * 4;
-    const h = hMin + rng() * (hMax - hMin);
-    const mat = rng() > 0.5 ? MAT.concrete : MAT.glass;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    m.position.set((rng() - 0.5) * spread, h / 2, (rng() - 0.5) * spread);
-    g.add(m);
+/* ==========================================================================
+   TERRAIN HEIGHT
+   Input world units, output world units. Internally works in km / metres so
+   the mountain heights below are readable as real elevations.
+   ========================================================================== */
+function mainlandHeight(wx, wz) {
+  const kx = wx / KM, kz = wz / KM;
+  const sd = coastSDF(kx, kz);
+  if (sd > 0) return -mv(80) - Math.min(mv(400), sd * mv(20));   // seafloor
+
+  const inland = -sd;
+  const coastFade = smoothstep(0, 6, inland);        // 6 km ramp up from the shore
+
+  // Rolling base relief: most of Korea is 100–400 m hills
+  const base  = fbm(kx * 0.055, kz * 0.055, 4);
+  const rough = fbm(kx * 0.16 + 40, kz * 0.16, 3);
+  let metres = 60 + base * 380 + rough * 120;
+
+  // Taebaek: a high ridge hugging the east coast (peaks ~1400–1600 m)
+  const dT = distToPolyline(kx, kz, TAEBAEK, false);
+  metres += (1 - smoothstep(4, 46, dT)) * (900 + rough * 700);
+
+  // Sobaek: lower range running south-west, topping out around Jirisan
+  const dS = distToPolyline(kx, kz, SOBAEK, false);
+  metres += (1 - smoothstep(4, 34, dS)) * (620 + rough * 520);
+
+  return Math.max(mv(8), mv(metres) * coastFade);
+}
+
+/* City basins: flatten the ground under each urban area so cities sit level */
+const BASINS = CITIES.filter(c => c.urbanR > 0).map(c => ({
+  x: c.x * KM, z: c.z * KM, r: c.urbanR * KM, y: mv(c.baseM),
+}));
+
+function heightAt(wx, wz) {
+  let y = mainlandHeight(wx, wz);
+  for (const b of BASINS) {
+    const d = Math.hypot(wx - b.x, wz - b.z);
+    if (d < b.r) y = lerp(y, b.y, 1 - smoothstep(b.r * 0.5, b.r, d));
   }
-  return g;
+  return y;
 }
 
-function buildSeoul() {
-  const g = new THREE.Group();
-  g.add(buildingCluster(46, 8, 34, 55, 42));
-  // Namsan hill + N Seoul Tower
-  const hill = new THREE.Mesh(new THREE.ConeGeometry(14, 14, 20), MAT.hill);
-  hill.position.set(-12, 7, -18);
-  g.add(hill);
-  const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.0, 28, 10), MAT.white);
-  tower.position.set(-12, 14 + 14, -18);
-  g.add(tower);
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(2.8, 14, 10), MAT.red);
-  bulb.position.set(-12, 14 + 28, -18);
-  g.add(bulb);
-  return g;
-}
-
-function buildBusan() {
-  const g = new THREE.Group();
-  g.add(buildingCluster(26, 6, 24, 34, 71));
-  // Simple cable-stayed bridge across a coastal gap
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1, 46), MAT.strip);
-  deck.position.set(18, 7, 0);
-  g.add(deck);
-  for (let s = -1; s <= 1; s += 2) {
-    const pylon = new THREE.Mesh(new THREE.BoxGeometry(1.1, 24, 1.3), MAT.white);
-    pylon.position.set(18, 12, s * 12);
-    g.add(pylon);
+/* Jeju — analytic shield volcano with a summit crater */
+function jejuHeight(wx, wz) {
+  const kx = wx / KM - JEJU.cx, kz = wz / KM - JEJU.cz;
+  const n = Math.hypot(kx / JEJU.rx, kz / JEJU.rz);
+  let y = -999;
+  if (n < 1) {
+    const t = 1 - n;
+    y = mv(Math.pow(t, 2.4) * JEJU.peakM + t * 30) * smoothstep(0, 0.05, t);
+    const rc = Math.hypot(kx, kz);
+    if (rc < 2.2) y -= (1 - rc / 2.2) * mv(280);          // Baengnokdam crater
+    y += fbm(kx * 0.4 + 9, kz * 0.4) * mv(120) * n;
   }
-  return g;
-}
-
-function buildIncheon() {
-  const g = new THREE.Group();
-  g.add(buildingCluster(8, 4, 10, 22, 91));
-  // Runway strip + terminal
-  const runway = new THREE.Mesh(new THREE.BoxGeometry(9, 0.4, 55), MAT.strip);
-  runway.position.set(-18, 0.3, 0);
-  g.add(runway);
-  const terminal = new THREE.Mesh(new THREE.BoxGeometry(22, 4, 6.5), MAT.white);
-  terminal.position.set(-18, 2, -34);
-  g.add(terminal);
-  return g;
-}
-
-function buildTemple() {
-  const g = new THREE.Group();
-  // Stone base
-  const plat = new THREE.Mesh(new THREE.BoxGeometry(16, 0.9, 16), MAT.concrete);
-  plat.position.y = -0.45;
-  g.add(plat);
-  // Stacked pagoda tiers
-  const tiers = 5;
-  for (let i = 0; i < tiers; i++) {
-    const s = 6.5 - i * 0.95;
-    const body = new THREE.Mesh(new THREE.BoxGeometry(s, 1.4, s), MAT.wood);
-    body.position.y = i * 3.2 + 0.7;
-    g.add(body);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(s * 0.95, 1.7, 4), MAT.roof);
-    roof.position.y = i * 3.2 + 2.15;
-    roof.rotation.y = Math.PI / 4;
-    g.add(roof);
+  // Seongsan Ilchulbong — tuff cone off the eastern tip
+  const rs = Math.hypot(kx - 33, kz - 2);
+  if (rs < 3.2) {
+    let cone = (1 - rs / 3.2) * mv(182);
+    if (rs < 1.2) cone -= (1 - rs / 1.2) * mv(90);
+    y = Math.max(y, cone + mv(10));
   }
-  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.35, 3.2, 6), MAT.roof);
-  spire.position.y = tiers * 3.2 + 0.8;
-  g.add(spire);
-  return g;
+  return y;
 }
 
-function buildJejuTown() {
-  // Small coastal village at the base of Hallasan
-  const g = new THREE.Group();
-  g.add(buildingCluster(9, 2.5, 6, 22, 33));
+/* The height the aircraft must stay above, across every landmass */
+function groundAt(wx, wz) {
+  let g = heightAt(wx, wz);
+  const j = jejuHeight(wx, wz);
+  if (j > g) g = j;
+  if (Math.hypot(wx / KM - AIRPORT.cx, wz / KM - AIRPORT.cz) < AIRPORT.rKm) g = Math.max(g, mv(12));
   return g;
 }
 
 /* ==========================================================================
-   CITY LABELS — canvas-textured sprites that always face the camera
+   TERRAIN MESH — flat-shaded, coloured per face by elevation
    ========================================================================== */
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y,     x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x,     y + h, r);
-  ctx.arcTo(x,     y + h, x,     y,     r);
-  ctx.arcTo(x,     y,     x + w, y,     r);
+const _c = new THREE.Color();
+function colorForHeight(out, y) {
+  const m = y / VEX * 100;              // world units back to real metres
+  if      (m <   12) out.setRGB(0.85, 0.81, 0.60);   // beach
+  else if (m <  180) out.setRGB(0.53, 0.72, 0.35);   // coastal plain
+  else if (m <  450) out.setRGB(0.40, 0.61, 0.27);   // farmland / low hills
+  else if (m <  800) out.setRGB(0.29, 0.46, 0.26);   // forested slopes
+  else if (m < 1200) out.setRGB(0.44, 0.44, 0.36);   // bare rock
+  else if (m < 1650) out.setRGB(0.60, 0.57, 0.52);   // high ridge
+  else               out.setRGB(0.93, 0.94, 0.96);   // snow
+}
+function finishTerrain(geo) {
+  const ni = geo.toNonIndexed();
+  const p = ni.attributes.position;
+  const colors = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i += 3) {
+    colorForHeight(_c, (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3);
+    for (let k = 0; k < 3; k++) {
+      colors[(i + k) * 3] = _c.r; colors[(i + k) * 3 + 1] = _c.g; colors[(i + k) * 3 + 2] = _c.b;
+    }
+  }
+  ni.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  ni.computeVertexNormals();
+  return new THREE.Mesh(ni, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+}
+
+{ // mainland
+  const x0 = -110 * KM, x1 = 250 * KM, z0 = -110 * KM, z1 = 400 * KM;
+  const geo = new THREE.PlaneGeometry(x1 - x0, z1 - z0, 300, 380).rotateX(-Math.PI / 2);
+  geo.translate((x0 + x1) / 2, 0, (z0 + z1) / 2);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) p.setY(i, heightAt(p.getX(i), p.getZ(i)));
+  scene.add(finishTerrain(geo));
+}
+{ // Jeju
+  const geo = new THREE.PlaneGeometry(95 * KM, 55 * KM, 120, 76).rotateX(-Math.PI / 2);
+  geo.translate(JEJU.cx * KM, 0, JEJU.cz * KM);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const y = jejuHeight(p.getX(i), p.getZ(i));
+    p.setY(i, y === -999 ? -mv(120) : y);
+  }
+  scene.add(finishTerrain(geo));
+}
+{ // Incheon airport island
+  const isle = new THREE.Mesh(
+    new THREE.CylinderGeometry(AIRPORT.rKm * KM, AIRPORT.rKm * KM * 1.15, mv(60), 26),
+    new THREE.MeshLambertMaterial({ color: 0x88b25c, flatShading: true }));
+  isle.position.set(AIRPORT.cx * KM, mv(12) - mv(30), AIRPORT.cz * KM);
+  scene.add(isle);
+}
+
+/* ==========================================================================
+   MATERIALS
+   ========================================================================== */
+const MAT = {
+  vcol:     new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+  concrete: new THREE.MeshLambertMaterial({ color: 0xc2c5cb, flatShading: true }),
+  glass:    new THREE.MeshLambertMaterial({ color: 0x79a9cc, flatShading: true }),
+  white:    new THREE.MeshLambertMaterial({ color: 0xf2f1ea, flatShading: true }),
+  asphalt:  new THREE.MeshLambertMaterial({ color: 0x33363d, flatShading: true }),
+  gold:     new THREE.MeshLambertMaterial({ color: 0xcaa94a, flatShading: true }),
+  redwood:  new THREE.MeshLambertMaterial({ color: 0xa03d2c, flatShading: true }),
+  tileroof: new THREE.MeshLambertMaterial({ color: 0x41403c, flatShading: true }),
+  stone:    new THREE.MeshLambertMaterial({ color: 0xada79c, flatShading: true }),
+  hill:     new THREE.MeshLambertMaterial({ color: 0x3f6136, flatShading: true }),
+  grass:    new THREE.MeshLambertMaterial({ color: 0x6f9e4f, flatShading: true }),
+  crane:    new THREE.MeshLambertMaterial({ color: 0xd97b29, flatShading: true }),
+  cable:    new THREE.MeshLambertMaterial({ color: 0xeceff2 }),
+  // Unlit so rivers read as flat colour regardless of which way the strip winds
+  water:    new THREE.MeshBasicMaterial({ color: 0x3f83b8, side: THREE.DoubleSide }),
+  red:      new THREE.MeshLambertMaterial({ color: 0xd0392f, flatShading: true }),
+};
+
+/* ==========================================================================
+   MERGED CITY BLOCKS — one draw call per city
+   ========================================================================== */
+function mergeGeometries(geoms) {
+  let total = 0;
+  for (const g of geoms) total += g.attributes.position.count;
+  const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
+  let o = 0;
+  for (const g of geoms) {
+    pos.set(g.attributes.position.array, o);
+    nor.set(g.attributes.normal.array, o);
+    col.set(g.attributes.color.array, o);
+    o += g.attributes.position.array.length;
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal',   new THREE.BufferAttribute(nor, 3));
+  out.setAttribute('color',    new THREE.BufferAttribute(col, 3));
+  return out;
+}
+function pushBox(list, w, h, d, x, y, z, color, rotY = 0) {
+  let g = new THREE.BoxGeometry(w, h, d);
+  if (rotY) g.rotateY(rotY);
+  g.translate(x, y + h / 2, z);
+  g = g.toNonIndexed();
+  const n = g.attributes.position.count, cols = new Float32Array(n * 3);
+  const c = new THREE.Color(color);
+  for (let i = 0; i < n; i++) { cols[i*3] = c.r; cols[i*3+1] = c.g; cols[i*3+2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+  list.push(g);
+}
+function meshFromBoxes(list) {
+  const m = new THREE.Mesh(mergeGeometries(list), MAT.vcol);
+  for (const g of list) g.dispose();
+  list.length = 0;
+  return m;
+}
+
+const PALETTE = [0xb9bdc5, 0xa3aab4, 0x7ba4c6, 0x8fb0c4, 0xc8bba4, 0x596069, 0xd2cec4];
+
+/* A jittered grid of city blocks. Sizes are given in real metres.
+   `avoid` holds [x, z, radius] circles kept clear for monuments and rivers. */
+function cityBlocks(list, o) {
+  const rng = seededRng(o.seed);
+  const pitch = tw(o.blockM || 700);   // true-scale block spacing
+  const halfC = (o.cols - 1) / 2, halfR = (o.rows - 1) / 2;
+  for (let r = 0; r < o.rows; r++) {
+    for (let c = 0; c < o.cols; c++) {
+      const x = o.cx + (c - halfC) * pitch + (rng() - 0.5) * pitch * 0.45;
+      const z = o.cz + (r - halfR) * pitch + (rng() - 0.5) * pitch * 0.45;
+
+      // Cities thin out and drop in height towards their edges, which gives a
+      // downtown core instead of a uniform slab of blocks.
+      const nd = Math.min(1, Math.hypot((c - halfC) / halfC, (r - halfR) / halfR));
+      const core = 1 - nd * nd;
+      if (rng() > (o.density ?? 0.9) * (0.35 + 0.65 * core)) continue;
+      if (o.avoid && o.avoid.some(a => Math.hypot(x - a[0], z - a[1]) < a[2])) continue;
+
+      let hM = o.hMinM + rng() * (o.hMaxM - o.hMinM);
+      hM *= 0.5 + 0.85 * core;                            // taller downtown
+      if (rng() < 0.06) hM *= 2.4;                        // the odd highrise
+      pushBox(list, pitch * (0.34 + rng() * 0.3), sv(hM), pitch * (0.34 + rng() * 0.3),
+              x, o.ground, z, PALETTE[(rng() * PALETTE.length) | 0]);
+    }
+  }
+}
+
+/* ==========================================================================
+   LABELS
+   ========================================================================== */
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);         ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
-
-function buildCityLabel(name) {
+function makeLabelSprite(text, accent) {
   const canvas = document.createElement('canvas');
-  canvas.width = 320; canvas.height = 72;
+  canvas.width = 512; canvas.height = 112;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'rgba(10, 20, 40, 0.66)';
-  roundRect(ctx, 4, 8, 312, 56, 14); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 30px Helvetica, Arial, sans-serif';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(name, 160, 38);
-
+  let size = 46;
+  ctx.font = `bold ${size}px Helvetica, Arial, sans-serif`;
+  while (ctx.measureText(text).width > 440 && size > 22) {
+    size -= 2; ctx.font = `bold ${size}px Helvetica, Arial, sans-serif`;
+  }
+  const w = ctx.measureText(text).width + 46, x0 = (512 - w) / 2;
+  ctx.fillStyle = accent ? 'rgba(12,26,48,0.78)' : 'rgba(10,20,40,0.62)';
+  roundRectPath(ctx, x0, 14, w, 84, 20); ctx.fill();
+  ctx.strokeStyle = accent ? 'rgba(255,222,150,0.85)' : 'rgba(255,255,255,0.34)';
+  ctx.lineWidth = accent ? 3 : 2; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, 256, 57);
   const tex = new THREE.CanvasTexture(canvas);
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.anisotropy = 4;
+  tex.minFilter = tex.magFilter = THREE.LinearFilter;
+  return new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthTest: true, depthWrite: false, fog: false }));
+}
+const stickMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, fog: false });
 
-  const spr = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: tex, transparent: true, depthTest: true, depthWrite: false,
-  }));
-  spr.scale.set(34, 7.7, 1);
-  return spr;
+/* Labels are re-scaled every frame in proportion to their distance from the
+   camera, which keeps them at a near-constant on-screen size instead of
+   ballooning as you fly in. `k` sets that size as a fraction of screen height;
+   `maxDist` culls them so the country isn't a wall of text from high altitude. */
+const CITY_LABELS = [], MARK_LABELS = [];
+const LABEL_ASPECT = 512 / 112;
+const MAX_CITY_LABELS = 3;   // only the nearest few, so the horizon stays clean
+
+function addLabel(list, name, x, y, z, opts) {
+  const s = makeLabelSprite(name, opts.accent);
+  s.position.set(x, y, z);
+  s.renderOrder = 10;
+  scene.add(s);
+  list.push({ sprite: s, k: opts.k, min: opts.min, max: opts.max, maxDist: opts.maxDist, d: 0 });
+}
+/* City name — large, sits high above the skyline */
+function cityLabel(name, x, y, z) {
+  addLabel(CITY_LABELS, name, x, y, z, { accent: true, k: 0.055, min: 12, max: 90, maxDist: 2600 });
+}
+/* Landmark name — smaller, with a leader line down to the structure */
+function markLabel(name, x, topY, z) {
+  const labelY = topY + 40;
+  addLabel(MARK_LABELS, name, x, labelY, z, { accent: false, k: 0.042, min: 5, max: 34, maxDist: 900 });
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+    [new THREE.Vector3(x, topY, z), new THREE.Vector3(x, labelY - 8, z)]), stickMat));
 }
 
-// Instantiate all cities
-for (const c of CITIES) {
-  const ground = heightAt(c.x, c.z);
-  let mesh;
-  switch (c.kind) {
-    case 'seoul':   mesh = buildSeoul();   break;
-    case 'busan':   mesh = buildBusan();   break;
-    case 'airport': mesh = buildIncheon(); break;
-    case 'temple':  mesh = buildTemple();  break;
-    case 'jeju':    mesh = buildJejuTown();break;
-    default:        mesh = buildingCluster(14, 4, 15, 24, c.x * 7 + c.z);
+const _camPos = new THREE.Vector3();
+function sizeLabel(L, d) {
+  const h = Math.min(L.max, Math.max(L.min, d * L.k));
+  L.sprite.scale.set(h * LABEL_ASPECT, h, 1);
+  const fade = 1 - Math.max(0, (d - L.maxDist * 0.7) / (L.maxDist * 0.3));
+  L.sprite.material.opacity = Math.max(0, Math.min(1, fade));
+  L.sprite.visible = true;
+}
+function updateLabels() {
+  camera.getWorldPosition(_camPos);
+  for (const L of MARK_LABELS) {
+    const d = _camPos.distanceTo(L.sprite.position);
+    if (d > L.maxDist) { L.sprite.visible = false; continue; }
+    sizeLabel(L, d);
   }
-  if (c.scale) mesh.scale.setScalar(c.scale);
-  mesh.position.set(c.x, Math.max(0.5, ground), c.z);
-  scene.add(mesh);
+  // City labels: show only the nearest few so distant names don't stack up
+  for (const L of CITY_LABELS) {
+    L.d = _camPos.distanceTo(L.sprite.position);
+    L.sprite.visible = false;
+  }
+  CITY_LABELS.slice().sort((a, b) => a.d - b.d)
+    .slice(0, MAX_CITY_LABELS)
+    .forEach(L => { if (L.d <= L.maxDist) sizeLabel(L, L.d); });
+}
 
-  const label = buildCityLabel(c.name);
-  const labelBoost = (c.kind === 'jeju') ? 90 : 58;
-  label.position.set(c.x, ground + labelBoost, c.z);
-  scene.add(label);
+/* Flat ribbon, used for rivers */
+function ribbon(pts, width, y, material) {
+  const verts = [], idx = [];
+  for (let i = 0; i < pts.length; i++) {
+    const [x, z] = pts[i];
+    const [px, pz] = pts[Math.max(0, i - 1)], [nx, nz] = pts[Math.min(pts.length - 1, i + 1)];
+    let dx = nx - px, dz = nz - pz; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+    verts.push(x - dz * width / 2, y, z + dx * width / 2,
+               x + dz * width / 2, y, z - dx * width / 2);
+  }
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  g.setIndex(idx);
+  const nrm = new Float32Array(verts.length);
+  for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  return new THREE.Mesh(g, material);
+}
+function cableTube(p0, pm, p1, r) {
+  const curve = new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(...p0), new THREE.Vector3(...pm), new THREE.Vector3(...p1));
+  return new THREE.Mesh(new THREE.TubeGeometry(curve, 18, r, 5, false), MAT.cable);
 }
 
 /* ==========================================================================
-   AIRCRAFT — a bare Object3D holding the camera (first-person view)
+   HERITAGE KIT — hanok roofs, palace halls, stone pagodas
+   ========================================================================== */
+function hanokRoof(g, spanM, riseM, x, y, z) {
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(hh(spanM), hv(riseM), 4), MAT.tileroof);
+  roof.rotation.y = Math.PI / 4;
+  roof.position.set(x, y + hv(riseM) / 2, z);
+  g.add(roof);
+}
+/* A palace/temple hall: stone platform, red timber body, double-tier tiled roof */
+function hall(g, wM, dM, x, y, z) {
+  const base = new THREE.Mesh(new THREE.BoxGeometry(hh(wM + 8), hv(2), hh(dM + 8)), MAT.stone);
+  base.position.set(x, y + hv(1), z); g.add(base);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(hh(wM), hv(7), hh(dM)), MAT.redwood);
+  body.position.set(x, y + hv(2) + hv(3.5), z); g.add(body);
+  hanokRoof(g, wM * 0.72, 4.5, x, y + hv(9), z);
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(hh(wM * 0.55), hv(4), hh(dM * 0.55)), MAT.redwood);
+  upper.position.set(x, y + hv(13.5) + hv(2), z); g.add(upper);
+  hanokRoof(g, wM * 0.55, 4, x, y + hv(17.5), z);
+  return y + hv(21.5);
+}
+function pagoda(g, x, y, z, tiers, baseM) {
+  for (let i = 0; i < tiers; i++) {
+    const s = baseM * (1 - i * 0.17);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(hh(s * 0.55), hv(2.4), hh(s * 0.55)), MAT.stone);
+    body.position.set(x, y + hv(i * 3.6 + 1.2), z); g.add(body);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(hh(s), hv(0.9), hh(s)), MAT.stone);
+    cap.position.set(x, y + hv(i * 3.6 + 2.8), z); g.add(cap);
+  }
+  return y + hv(tiers * 3.6);
+}
+
+/* ==========================================================================
+   SEOUL — Han River, Namsan + N Seoul Tower, Lotte World Tower,
+           Gyeongbokgung, 63 Building
+   ========================================================================== */
+{
+  const c = city['Seoul'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+
+  // Han River, west→east through the middle of the city
+  const river = [[-19,4],[-12,2],[-6,1.5],[0,2],[6,3.5],[12,4],[18,6]]
+    .map(([x, z]) => [cx + x * KM, cz + z * KM]);
+  scene.add(ribbon(river, 1.4 * KM, gy + 1.2, MAT.water));
+
+  const namsan = [cx - 1.5 * KM, cz - 3 * KM];       // Namsan, just south of centre
+  const palace = [cx - 5 * KM,  cz - 8 * KM];        // Gyeongbokgung, north-west
+  const lotte  = [cx + 9 * KM,  cz + 6 * KM];        // Jamsil, south-east
+  const b63    = [cx - 5 * KM,  cz + 4 * KM];        // Yeouido, on the river
+
+  const avoid = river.map(([x, z]) => [x, z, 1.9 * KM]);
+  avoid.push([...namsan, 3.2 * KM], [...palace, 2.4 * KM], [...lotte, 1.6 * KM], [...b63, 1.6 * KM]);
+
+  const boxes = [];
+  // Gangbuk (north of the river) — the historic core
+  cityBlocks(boxes, { cx, cz: cz - 5 * KM, ground: gy, cols: 30, rows: 17,
+                      blockM: 700, hMinM: 30, hMaxM: 110, seed: 42, avoid });
+  // Gangnam (south) — newer and taller
+  cityBlocks(boxes, { cx: cx + 4 * KM, cz: cz + 7 * KM, ground: gy, cols: 25, rows: 15,
+                      blockM: 700, hMinM: 50, hMaxM: 180, seed: 77, avoid });
+  scene.add(meshFromBoxes(boxes));
+
+  // Namsan (243 m) with the N Seoul Tower (237 m) on top.
+  // The hill is terrain, so it takes the terrain exaggeration, not the taller
+  // structure one — otherwise it swallows the city.
+  const hill = new THREE.Mesh(new THREE.ConeGeometry(tw(2600), mv(243), 22), MAT.hill);
+  hill.position.set(namsan[0], gy + mv(243) / 2, namsan[1]);
+  scene.add(hill);
+  const hillTop = gy + mv(243);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(mast(9), mast(16), sv(170), 10), MAT.white);
+  shaft.position.set(namsan[0], hillTop + sv(85), namsan[1]); scene.add(shaft);
+  const obs = new THREE.Mesh(new THREE.CylinderGeometry(mast(26), mast(22), sv(28), 10), MAT.concrete);
+  obs.position.set(namsan[0], hillTop + sv(184), namsan[1]); scene.add(obs);
+  const ant = new THREE.Mesh(new THREE.ConeGeometry(mast(6), sv(40), 6), MAT.white);
+  ant.position.set(namsan[0], hillTop + sv(217), namsan[1]); scene.add(ant);
+  markLabel('N Seoul Tower', namsan[0], hillTop + sv(240), namsan[1]);
+
+  // Lotte World Tower (555 m) — tapering hexagonal supertall
+  const lw = new THREE.Mesh(new THREE.CylinderGeometry(mast(28), mast(72), sv(500), 6), MAT.glass);
+  lw.position.set(lotte[0], gy + sv(250), lotte[1]); scene.add(lw);
+  const lwTip = new THREE.Mesh(new THREE.ConeGeometry(mast(28), sv(55), 6), MAT.glass);
+  lwTip.position.set(lotte[0], gy + sv(527), lotte[1]); scene.add(lwTip);
+  markLabel('Lotte World Tower', lotte[0], gy + sv(560), lotte[1]);
+
+  // 63 Building (249 m) — gold slab on Yeouido
+  const s63 = new THREE.Mesh(new THREE.BoxGeometry(tw(400), sv(249), tw(900)), MAT.gold);
+  s63.position.set(b63[0], gy + sv(124), b63[1]); scene.add(s63);
+  markLabel('63 Building', b63[0], gy + sv(252), b63[1]);
+
+  // Gyeongbokgung — walled courtyard, throne hall, Gwanghwamun gate
+  {
+    const g = new THREE.Group();
+    const court = new THREE.Mesh(new THREE.BoxGeometry(hh(115), hv(1), hh(95)), MAT.stone);
+    court.position.y = hv(0.5); g.add(court);
+    const top = hall(g, 45, 30, 0, hv(1), -hh(18));           // Geunjeongjeon
+    const gate = new THREE.Mesh(new THREE.BoxGeometry(hh(38), hv(6), hh(12)), MAT.stone);
+    gate.position.set(0, hv(4), hh(40)); g.add(gate);          // Gwanghwamun
+    hanokRoof(g, 26, 5, 0, hv(7), hh(40));
+    g.position.set(palace[0], gy, palace[1]);
+    scene.add(g);
+    markLabel('Gyeongbokgung', palace[0], gy + top, palace[1]);
+  }
+
+  cityLabel('SEOUL', cx, gy + sv(1500), cz);
+}
+
+/* ==========================================================================
+   INCHEON — port city, offshore airport, Incheon Bridge
+   ========================================================================== */
+{
+  const c = city['Incheon'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx, cz, ground: gy, cols: 18, rows: 14,
+                      blockM: 800, hMinM: 25, hMaxM: 90, seed: 91 });
+  scene.add(meshFromBoxes(boxes));
+  cityLabel('INCHEON', cx, gy + sv(1100), cz);
+
+  // Incheon International Airport — two parallel 3.75 km runways + terminal
+  const ax = AIRPORT.cx * KM, az = AIRPORT.cz * KM, ay = mv(12);
+  const ap = [];
+  for (const off of [-1.1 * KM, 1.1 * KM]) {
+    pushBox(ap, sh(190), sv(4), 3.75 * KM, ax + off, ay, az, 0x33363d);
+    for (let i = -6; i <= 6; i++)
+      pushBox(ap, sh(40), sv(6), 0.22 * KM, ax + off, ay, az + i * 0.28 * KM, 0xe8e8e8);
+  }
+  pushBox(ap, tw(1100), sv(40), tw(320), ax, ay, az - 2.4 * KM, 0xf2f1ea);  // terminal
+  pushBox(ap, sh(180), sv(100), sh(180), ax, ay, az - 1.7 * KM, 0xc2c5cb);  // control tower
+  pushBox(ap, sh(300), sv(26), sh(300), ax, ay + sv(100), az - 1.7 * KM, 0x79a9cc);
+  scene.add(meshFromBoxes(ap));
+  markLabel('Incheon Airport', ax, ay + sv(190), az - 1.7 * KM);
+
+  // Incheon Bridge — cable-stayed, island to mainland
+  {
+    const bz = az + 3.4 * KM;
+    const x0 = ax + AIRPORT.rKm * KM * 0.8, x1 = cx - 1.2 * KM;
+    const mid = (x0 + x1) / 2, deckY = mv(70);
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, sv(18), sh(120)), MAT.concrete);
+    deck.position.set(mid, deckY, bz); scene.add(deck);
+    for (const px of [mid - 1.1 * KM, mid + 1.1 * KM]) {
+      const t = new THREE.Mesh(new THREE.BoxGeometry(mast(18), sv(230), mast(18)), MAT.white);
+      t.position.set(px, deckY + sv(105), bz); scene.add(t);
+      for (const d of [0.35, 0.7, 1.05]) for (const s of [-1, 1])
+        scene.add(cableTube([px, deckY + sv(210), bz],
+                            [px + s * d * KM * 0.5, deckY + sv(110), bz],
+                            [px + s * d * KM, deckY + sv(12), bz], mast(8)));
+    }
+    markLabel('Incheon Bridge', mid, deckY + sv(250), bz);
+  }
+}
+
+/* ==========================================================================
+   BUSAN — waterfront towers, Gwangan Bridge, Busan Tower, container port
+   ========================================================================== */
+{
+  const c = city['Busan'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx: cx - 1.5 * KM, cz: cz - 1 * KM, ground: gy, cols: 22, rows: 15,
+                      blockM: 700, hMinM: 35, hMaxM: 150, seed: 71 });
+  // Marine City / Haeundae — slim residential supertalls on the beach
+  const rng = seededRng(7);
+  for (let i = 0; i < 8; i++)
+    pushBox(boxes, sh(260 + rng() * 90), sv(180 + rng() * 130), sh(260 + rng() * 90),
+            cx + 4.2 * KM + (rng() - 0.5) * 2.2 * KM, gy, cz + 2.2 * KM + (rng() - 0.5) * 1.6 * KM, 0x8fb0c4);
+  scene.add(meshFromBoxes(boxes));
+
+  // Gwangan Bridge — 7.4 km twin-deck suspension span across the bay
+  {
+    // Sits offshore in Suyeong Bay, on a single deck ~60 m above the water
+    const bx = cx + 8.6 * KM, deckY = mv(60);
+    const z0 = cz - 2.6 * KM, z1 = cz + 4.4 * KM, span = z1 - z0, mid = (z0 + z1) / 2;
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(sh(120), sv(20), span), MAT.concrete);
+    deck.position.set(bx, deckY, mid); scene.add(deck);
+
+    const towers = [mid - 1.2 * KM, mid + 1.2 * KM];
+    const towTop = deckY + sv(190);
+    for (const tz of towers) {
+      for (const s of [-1, 1]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(mast(16), sv(200), mast(16)), MAT.white);
+        leg.position.set(bx + s * sh(60), deckY + sv(90), tz); scene.add(leg);
+      }
+      const crossbar = new THREE.Mesh(new THREE.BoxGeometry(sh(170), sv(22), mast(16)), MAT.white);
+      crossbar.position.set(bx, towTop - sv(20), tz); scene.add(crossbar);
+    }
+    // Main cables: sagging main span plus the two back-stays to the abutments
+    for (const s of [-1, 1]) {
+      const xo = bx + s * sh(60);
+      scene.add(cableTube([xo, towTop, towers[0]], [xo, deckY + sv(30), mid],
+                          [xo, towTop, towers[1]], mast(9)));
+      scene.add(cableTube([xo, towTop, towers[0]], [xo, deckY + sv(70), (z0 + towers[0]) / 2],
+                          [xo, deckY + sv(12), z0], mast(8)));
+      scene.add(cableTube([xo, towTop, towers[1]], [xo, deckY + sv(70), (z1 + towers[1]) / 2],
+                          [xo, deckY + sv(12), z1], mast(8)));
+    }
+    markLabel('Gwangan Bridge', bx, towTop + sv(30), mid);
+  }
+
+  // Busan Tower (120 m) on Yongdusan hill (69 m)
+  {
+    const hx = cx - 3.2 * KM, hz = cz + 1.6 * KM;
+    const hill = new THREE.Mesh(new THREE.ConeGeometry(tw(1400), mv(69), 16), MAT.hill);
+    hill.position.set(hx, gy + mv(35), hz); scene.add(hill);
+    const top = gy + mv(69);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(mast(8), mast(14), sv(100), 10), MAT.white);
+    shaft.position.set(hx, top + sv(50), hz); scene.add(shaft);
+    const obs = new THREE.Mesh(new THREE.CylinderGeometry(mast(20), mast(20), sv(22), 10), MAT.concrete);
+    obs.position.set(hx, top + sv(110), hz); scene.add(obs);
+    markLabel('Busan Tower', hx, top + sv(126), hz);
+  }
+
+  // Port of Busan — quay, gantry cranes, container stacks
+  {
+    const px = cx - 2.5 * KM, pz = cz + 4.2 * KM, port = [];
+    const quayY = sv(20);
+    pushBox(port, 4 * KM, quayY, 0.7 * KM, px, 0, pz, 0x8d9097);          // quay apron
+    const crng = seededRng(13), cols = [0xc0563e, 0x3f7ab8, 0x4f9e5c, 0xc9a83f, 0xb5b9be];
+    // Ship-to-shore gantry cranes, straddling the quay edge
+    for (let i = 0; i < 6; i++) {
+      const gx = px - 1.7 * KM + i * 0.68 * KM;
+      for (const s of [-1, 1])
+        pushBox(port, sh(45), sv(75), sh(45), gx, quayY, pz + s * tw(160), 0xd97b29);
+      pushBox(port, sh(70), sv(16), tw(360), gx, quayY + sv(75), pz, 0xd97b29);   // top beam
+      pushBox(port, sh(60), sv(14), tw(230), gx, quayY + sv(84), pz - tw(230), 0xd97b29); // boom
+    }
+    // Stacked containers behind the quay
+    for (let i = 0; i < 54; i++)
+      pushBox(port, tw(190), sv(12 + crng() * 22), tw(55),
+              px - 1.9 * KM + crng() * 3.8 * KM, quayY, pz + tw(260) + crng() * tw(420),
+              cols[(crng() * cols.length) | 0]);
+    scene.add(meshFromBoxes(port));
+    markLabel('Port of Busan', px, quayY + sv(105), pz);
+  }
+
+  cityLabel('BUSAN', cx, gy + sv(1300), cz);
+}
+
+/* ==========================================================================
+   GYEONGJU — Bulguksa temple and the Daereungwon royal tombs
+   ========================================================================== */
+{
+  const c = city['Gyeongju'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx: cx - 1.2 * KM, cz, ground: gy, cols: 13, rows: 11,
+                      blockM: 700, hMinM: 12, hMaxM: 34, seed: 55, density: 0.7 });
+  scene.add(meshFromBoxes(boxes));
+
+  // Bulguksa — terraced platform, main hall, the twin stone pagodas
+  {
+    const g = new THREE.Group();
+    const t1 = new THREE.Mesh(new THREE.BoxGeometry(hh(140), hv(4), hh(100)), MAT.stone);
+    t1.position.y = hv(2); g.add(t1);
+    const t2 = new THREE.Mesh(new THREE.BoxGeometry(hh(110), hv(3), hh(72)), MAT.stone);
+    t2.position.y = hv(5.5); g.add(t2);
+    const top = hall(g, 40, 26, 0, hv(7), -hh(12));
+    pagoda(g, -hh(30), hv(7), hh(22), 3, 26);     // Seokgatap (8.2 m)
+    pagoda(g,  hh(30), hv(7), hh(22), 4, 24);     // Dabotap (10.4 m)
+    g.position.set(cx + 2.6 * KM, gy, cz + 1.4 * KM);
+    scene.add(g);
+    markLabel('Bulguksa', cx + 2.6 * KM, gy + top, cz + 1.4 * KM);
+  }
+
+  // Daereungwon — grassy Silla burial mounds
+  {
+    const rng = seededRng(29), gx = cx - 0.6 * KM, gz = cz - 2.2 * KM;
+    for (let i = 0; i < 8; i++) {
+      const r = hh(28 + rng() * 30);
+      const mound = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 16, 9, 0, Math.PI * 2, 0, Math.PI / 2), MAT.grass);
+      mound.scale.y = 0.62;
+      mound.position.set(gx + (rng() - 0.5) * 2.4 * KM, gy, gz + (rng() - 0.5) * 1.6 * KM);
+      scene.add(mound);
+    }
+    markLabel('Daereungwon Tombs', gx, gy + hv(28), gz);
+  }
+
+  cityLabel('GYEONGJU', cx, gy + sv(1100), cz);
+}
+
+/* ==========================================================================
+   DAEJEON / DAEGU / GWANGJU — mid-size cities, one landmark each
+   ========================================================================== */
+{
+  const c = city['Daejeon'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx, cz, ground: gy, cols: 17, rows: 13, blockM: 800,
+                      hMinM: 25, hMaxM: 95, seed: 61 });
+  scene.add(meshFromBoxes(boxes));
+  // Expo Hanbit Tower (93 m)
+  const tx = cx + 3 * KM, tz = cz - 1.6 * KM;
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(mast(14), sv(93), 8), MAT.white);
+  spire.position.set(tx, gy + sv(46), tz); scene.add(spire);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(mast(30), mast(5), 6, 18), MAT.concrete);
+  ring.rotation.x = Math.PI / 2; ring.position.set(tx, gy + sv(62), tz); scene.add(ring);
+  markLabel('Hanbit Tower', tx, gy + sv(96), tz);
+  cityLabel('DAEJEON', cx, gy + sv(1100), cz);
+}
+{
+  const c = city['Daegu'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx, cz, ground: gy, cols: 19, rows: 14, blockM: 800,
+                      hMinM: 28, hMaxM: 105, seed: 83 });
+  scene.add(meshFromBoxes(boxes));
+  // Daegu 83 Tower (202 m)
+  const tx = cx - 3 * KM, tz = cz + 1.4 * KM;
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(mast(11), mast(20), sv(160), 10), MAT.concrete);
+  shaft.position.set(tx, gy + sv(80), tz); scene.add(shaft);
+  const deck = new THREE.Mesh(new THREE.CylinderGeometry(mast(30), mast(23), sv(30), 10), MAT.glass);
+  deck.position.set(tx, gy + sv(172), tz); scene.add(deck);
+  const ant = new THREE.Mesh(new THREE.ConeGeometry(mast(5), sv(60), 6), MAT.white);
+  ant.position.set(tx, gy + sv(217), tz); scene.add(ant);
+  markLabel('83 Tower', tx, gy + sv(250), tz);
+  cityLabel('DAEGU', cx, gy + sv(1100), cz);
+}
+{
+  const c = city['Gwangju'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx, cz, ground: gy, cols: 17, rows: 13, blockM: 800,
+                      hMinM: 22, hMaxM: 85, seed: 37 });
+  scene.add(meshFromBoxes(boxes));
+  // A traditional pavilion in a riverside park
+  const g = new THREE.Group();
+  const top = hall(g, 26, 18, 0, 0, 0);
+  g.position.set(cx + 2.6 * KM, gy, cz + 1.5 * KM); scene.add(g);
+  markLabel('Gwangju Pavilion', cx + 2.6 * KM, gy + top, cz + 1.5 * KM);
+  cityLabel('GWANGJU', cx, gy + sv(1100), cz);
+}
+
+/* ==========================================================================
+   JEJU — Hallasan and Seongsan Ilchulbong are in the island mesh;
+          add the coastal town and the labels
+   ========================================================================== */
+{
+  const tx = JEJU.cx * KM, tz = (JEJU.cz - 14) * KM;
+  const ty = Math.max(mv(10), jejuHeight(tx, tz));
+  const boxes = [];
+  cityBlocks(boxes, { cx: tx, cz: tz, ground: ty, cols: 12, rows: 8, blockM: 700,
+                      hMinM: 12, hMaxM: 45, seed: 33, density: 0.75 });
+  scene.add(meshFromBoxes(boxes));
+  markLabel('Hallasan', JEJU.cx * KM, mv(JEJU.peakM) + mv(120), JEJU.cz * KM);
+  markLabel('Seongsan Ilchulbong', (JEJU.cx + 33) * KM, mv(200), (JEJU.cz + 2) * KM);
+  cityLabel('JEJU', tx, ty + sv(900), tz);
+}
+
+/* ==========================================================================
+   FORESTS — a single InstancedMesh of conifers across the hill country
+   ========================================================================== */
+{
+  const COUNT = 14000;
+  const trees = new THREE.InstancedMesh(
+    new THREE.ConeGeometry(sh(320), sv(600), 5),
+    new THREE.MeshLambertMaterial({ color: 0x2f6b35, flatShading: true }), COUNT);
+  const m = new THREE.Matrix4(), rng = seededRng(99);
+  let placed = 0, tries = 0;
+  while (placed < COUNT && tries < COUNT * 14) {
+    tries++;
+    let wx, wz, h;
+    if (rng() < 0.1) {                                     // some on Jeju's slopes
+      wx = (JEJU.cx + (rng() - 0.5) * JEJU.rx * 2) * KM;
+      wz = (JEJU.cz + (rng() - 0.5) * JEJU.rz * 2) * KM;
+      h = jejuHeight(wx, wz);
+      if (h < mv(150) || h > mv(1400)) continue;
+    } else {
+      wx = (-100 + rng() * 340) * KM;
+      wz = (-100 + rng() * 480) * KM;
+      h = heightAt(wx, wz);
+      if (h < mv(220) || h > mv(1250)) continue;
+    }
+    const s = 0.7 + rng() * 1.2;
+    m.makeScale(s, s, s);
+    m.setPosition(wx, h + sv(300) * s, wz);
+    trees.setMatrixAt(placed++, m);
+  }
+  trees.count = placed;
+  trees.instanceMatrix.needsUpdate = true;
+  scene.add(trees);
+}
+
+/* ==========================================================================
+   AIRCRAFT + INPUT
    ========================================================================== */
 const aircraft = new THREE.Object3D();
-aircraft.position.set(0, CONFIG.startAltitude, -70);
+aircraft.position.set(0, CONFIG.startAltitude, -60 * KM);
 aircraft.add(camera);
 scene.add(aircraft);
 
-// Flight state
-let yaw   = Math.PI;   // facing south (+Z)
-let pitch = 0;
-let roll  = 0;
-let targetRoll = 0;
-let speed = CONFIG.baseSpeed;
+let yaw = Math.PI, pitch = -0.08, roll = 0, speed = CONFIG.baseSpeed;
 
-/* ==========================================================================
-   INPUT — keyboard + optional pointer-lock mouse look
-   ========================================================================== */
 const keys = Object.create(null);
-window.addEventListener('keydown', e => { keys[e.code] = true; });
-window.addEventListener('keyup',   e => { keys[e.code] = false; });
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
 
-let mouseDYaw = 0, mouseDPitch = 0, pointerLocked = false;
-renderer.domElement.addEventListener('click', () => {
-  if (!pointerLocked) renderer.domElement.requestPointerLock();
-});
-document.addEventListener('pointerlockchange', () => {
-  pointerLocked = document.pointerLockElement === renderer.domElement;
-});
+let mDYaw = 0, mDPitch = 0, locked = false;
+renderer.domElement.addEventListener('click', () => { if (!locked) renderer.domElement.requestPointerLock(); });
+document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === renderer.domElement; });
 document.addEventListener('mousemove', e => {
-  if (!pointerLocked) return;
-  mouseDYaw   -= e.movementX * CONFIG.mouseSensitivity;
-  mouseDPitch -= e.movementY * CONFIG.mouseSensitivity;
+  if (!locked) return;
+  mDYaw -= e.movementX * CONFIG.mouseSensitivity;
+  mDPitch -= e.movementY * CONFIG.mouseSensitivity;
 });
 
-/* ==========================================================================
-   HUD REFERENCES
-   ========================================================================== */
+/* HUD */
 const hudSpeed = document.getElementById('hudSpeed');
 const hudAlt   = document.getElementById('hudAlt');
 const hudHdg   = document.getElementById('hudHdg');
 const hudCity  = document.getElementById('hudCity');
 
-/* ==========================================================================
-   MINIMAP — a 2D canvas rendering peninsula + cities + aircraft heading
-   ========================================================================== */
-const miniCanvas = document.getElementById('miniCanvas');
-const miniCtx    = miniCanvas.getContext('2d');
-const MINI_BOUNDS = { minX: -140, maxX: 370, minZ: -80, maxZ: 720 };
-
-function toMini(x, z) {
-  const w = miniCanvas.width, h = miniCanvas.height;
-  return [
-    (x - MINI_BOUNDS.minX) / (MINI_BOUNDS.maxX - MINI_BOUNDS.minX) * w,
-    (z - MINI_BOUNDS.minZ) / (MINI_BOUNDS.maxZ - MINI_BOUNDS.minZ) * h,
-  ];
+/* Minimap (kilometre space) */
+const mini = document.getElementById('miniCanvas'), mctx = mini.getContext('2d');
+const MB = { x0: -100, x1: 235, z0: -100, z1: 490 };
+function toMini(kx, kz) {
+  return [(kx - MB.x0) / (MB.x1 - MB.x0) * mini.width,
+          (kz - MB.z0) / (MB.z1 - MB.z0) * mini.height];
 }
-
 function drawMinimap() {
-  const w = miniCanvas.width, h = miniCanvas.height;
-  miniCtx.clearRect(0, 0, w, h);
-  // Ocean background
-  miniCtx.fillStyle = '#153a5a';
-  miniCtx.fillRect(0, 0, w, h);
+  mctx.fillStyle = '#14364f'; mctx.fillRect(0, 0, mini.width, mini.height);
+  mctx.beginPath();
+  COAST.forEach(([kx, kz], i) => { const [x, y] = toMini(kx, kz); i ? mctx.lineTo(x, y) : mctx.moveTo(x, y); });
+  mctx.closePath();
+  mctx.fillStyle = '#79ad63'; mctx.fill();
+  mctx.strokeStyle = 'rgba(255,255,255,0.3)'; mctx.lineWidth = 1; mctx.stroke();
 
-  // Peninsula polygon
-  miniCtx.beginPath();
-  for (let i = 0; i < PENINSULA.length; i++) {
-    const [px, py] = toMini(PENINSULA[i][0], PENINSULA[i][1]);
-    if (i === 0) miniCtx.moveTo(px, py); else miniCtx.lineTo(px, py);
-  }
-  miniCtx.closePath();
-  miniCtx.fillStyle = '#7cb56a';
-  miniCtx.fill();
-  miniCtx.strokeStyle = 'rgba(255,255,255,0.28)';
-  miniCtx.lineWidth = 1;
-  miniCtx.stroke();
+  const [jx, jy] = toMini(JEJU.cx, JEJU.cz);
+  mctx.beginPath(); mctx.ellipse(jx, jy, 9, 4.5, 0, 0, Math.PI * 2);
+  mctx.fillStyle = '#79ad63'; mctx.fill(); mctx.stroke();
 
-  // Jeju (small island)
-  const [jx, jy] = toMini(-55, 590);
-  miniCtx.beginPath(); miniCtx.arc(jx, jy, 6, 0, Math.PI * 2);
-  miniCtx.fillStyle = '#7cb56a'; miniCtx.fill(); miniCtx.stroke();
-
-  // City dots
-  miniCtx.fillStyle = '#ffffff';
+  mctx.fillStyle = '#fff';
   for (const c of CITIES) {
-    const [px, py] = toMini(c.x, c.z);
-    miniCtx.beginPath(); miniCtx.arc(px, py, 2, 0, Math.PI * 2); miniCtx.fill();
+    const [x, y] = toMini(c.x, c.z);
+    mctx.beginPath(); mctx.arc(x, y, 2, 0, Math.PI * 2); mctx.fill();
   }
 
-  // Aircraft arrow
-  const [ax, ay] = toMini(aircraft.position.x, aircraft.position.z);
-  miniCtx.save();
-  miniCtx.translate(ax, ay);
-  // In our coord system yaw=π faces +Z (down on the minimap). Rotate arrow accordingly.
-  miniCtx.rotate(-yaw + Math.PI);
-  miniCtx.fillStyle = '#ff5b5b';
-  miniCtx.beginPath();
-  miniCtx.moveTo(0, -7);
-  miniCtx.lineTo(5, 5);
-  miniCtx.lineTo(-5, 5);
-  miniCtx.closePath();
-  miniCtx.fill();
-  miniCtx.strokeStyle = 'rgba(0,0,0,0.4)';
-  miniCtx.stroke();
-  miniCtx.restore();
+  const [ax, ay] = toMini(aircraft.position.x / KM, aircraft.position.z / KM);
+  mctx.save(); mctx.translate(ax, ay); mctx.rotate(-yaw + Math.PI);
+  mctx.fillStyle = '#ff5b5b'; mctx.beginPath();
+  mctx.moveTo(0, -7); mctx.lineTo(5, 5); mctx.lineTo(-5, 5); mctx.closePath(); mctx.fill();
+  mctx.strokeStyle = 'rgba(0,0,0,0.45)'; mctx.stroke(); mctx.restore();
 }
 
 /* ==========================================================================
-   FLY-TO BUTTONS — smoothly interpolate camera to a viewpoint near a city
+   FLY-TO — approach each city from open ground / water so the skyline is
+   framed against the sea or a valley rather than hidden behind a mountain.
    ========================================================================== */
-const FLY_TARGETS = [
-  // name, x, z, approach-yaw (heading to face while approaching)
-  ['Seoul',    0,     0, Math.PI     ],
-  ['Incheon', -38,   15, Math.PI     ],
-  ['Daejeon',  53,  200, Math.PI     ],
-  ['Daegu',   205,  270, Math.PI * 1.15],
-  ['Gwangju', -12,  380, Math.PI     ],
-  ['Gyeongju',280,  275, Math.PI / 2 ],
-  ['Busan',   270,  400, Math.PI * 0.7 ],
-  ['Jeju',    -55,  590, 0           ],
+/* Each entry frames one city: the camera stops at city + dist·(sin b, cos b)
+   and looks back along the bearing. Distance and altitude are per-city so a
+   sprawling city like Seoul is seen whole while a compact one is seen close.
+   bearing is in radians: 0 = approach from the south, π/2 = from the east. */
+const FLY = [
+  { name: 'Seoul',    bearing:  0,             dist: 195, alt: 62 },  // up the Han, Namsan centre
+  { name: 'Incheon',  bearing: -Math.PI / 2,   dist: 400, alt: 42 },  // low in from the sea, over the airport
+  { name: 'Daejeon',  bearing:  0,             dist: 105, alt: 34 },
+  { name: 'Daegu',    bearing:  0,             dist: 115, alt: 38 },
+  { name: 'Gwangju',  bearing: -Math.PI / 2,   dist: 105, alt: 34 },
+  { name: 'Gyeongju', bearing:  0,             dist: 120, alt: 42 },  // temples and tombs side by side
+  { name: 'Busan',    bearing:  0.6,           dist: 125, alt: 42 },  // over the bay
+  { name: 'Jeju',     bearing:  0,             dist: 420, alt: 130 }, // clear of the island, Hallasan framed
 ];
-
 const flytoEl = document.getElementById('flyto');
 let flyingTo = null;
-
-for (const [name, tx, tz, tyaw] of FLY_TARGETS) {
+for (const f of FLY) {
+  const c = city[f.name];
   const btn = document.createElement('button');
-  btn.textContent = name;
+  btn.textContent = f.name;
   btn.onclick = () => {
-    // Sit ~90 units behind the city along the approach heading
-    const dx = 90 * Math.sin(tyaw);
-    const dz = 90 * Math.cos(tyaw);
+    const dist = f.dist ?? CONFIG.flyToDist, alt = f.alt ?? CONFIG.flyToAlt;
+    const tx = c.x * KM + dist * Math.sin(f.bearing);
+    const tz = c.z * KM + dist * Math.cos(f.bearing);
     flyingTo = {
-      fromX: aircraft.position.x, fromY: aircraft.position.y, fromZ: aircraft.position.z,
-      fromYaw: yaw, fromPitch: pitch,
-      toX: tx + dx, toY: 140, toZ: tz + dz,
-      toYaw: tyaw, toPitch: -0.15,
-      t: 0, dur: 3.8,
+      fx: aircraft.position.x, fy: aircraft.position.y, fz: aircraft.position.z,
+      fyaw: yaw, fpitch: pitch,
+      tx, tz, ty: groundAt(tx, tz) + alt,
+      tyaw: f.bearing, tpitch: -0.16,
+      t: 0, dur: CONFIG.flyToDuration,
     };
   };
   flytoEl.appendChild(btn);
 }
 
 /* ==========================================================================
-   MAIN LOOP
+   LOOP
    ========================================================================== */
-function lerp(a, b, t) { return a + (b - a) * t; }
 function lerpAngle(a, b, t) {
   let d = b - a;
   while (d >  Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
   return a + d * t;
 }
-
-function findNearestCity() {
-  let best = CITIES[0], bestD = Infinity;
+function nearest() {
+  let best = CITIES[0], bd = Infinity;
   for (const c of CITIES) {
-    const d = Math.hypot(c.x - aircraft.position.x, c.z - aircraft.position.z);
-    if (d < bestD) { bestD = d; best = c; }
+    const d = Math.hypot(c.x * KM - aircraft.position.x, c.z * KM - aircraft.position.z);
+    if (d < bd) { bd = d; best = c; }
   }
-  return { name: best.name, dist: bestD };
+  return { name: best.name, km: Math.round(bd / KM) };
+}
+
+function update(dt) {
+  if (flyingTo) {
+    const f = flyingTo;
+    f.t += dt;
+    const raw = Math.min(1, f.t / f.dur), t = raw * raw * (3 - 2 * raw);
+    aircraft.position.set(lerp(f.fx, f.tx, t), lerp(f.fy, f.ty, t), lerp(f.fz, f.tz, t));
+    yaw = lerpAngle(f.fyaw, f.tyaw, t);
+    pitch = lerp(f.fpitch, f.tpitch, t);
+    roll += (0 - roll) * Math.min(1, dt * CONFIG.bankSmoothing);
+    if (raw >= 1) flyingTo = null;
+  } else {
+    let turn = 0;
+    if (keys['KeyA'] || keys['ArrowLeft'])  turn += 1;
+    if (keys['KeyD'] || keys['ArrowRight']) turn -= 1;
+    let pin = 0;
+    if (keys['ArrowUp'])   pin += 1;
+    if (keys['ArrowDown']) pin -= 1;
+    if (keys['KeyW']) speed = Math.min(CONFIG.maxSpeed, speed + CONFIG.throttleRate * dt);
+    if (keys['KeyS']) speed = Math.max(CONFIG.minSpeed, speed - CONFIG.throttleRate * dt);
+
+    yaw += mDYaw; mDYaw = 0;
+    pitch += mDPitch; mDPitch = 0;
+    yaw += turn * CONFIG.turnRate * dt;
+    pitch = Math.max(-0.7, Math.min(0.7, pitch + pin * CONFIG.pitchRate * dt));
+    roll += (turn * CONFIG.bankMax - roll) * Math.min(1, dt * CONFIG.bankSmoothing);
+
+    // forward = R(yaw, pitch) · (0, 0, −1)
+    const cp = Math.cos(pitch), sp = Math.sin(pitch), cy = Math.cos(yaw), sy = Math.sin(yaw);
+    aircraft.position.x += -sy * cp * speed * dt;
+    aircraft.position.y +=  sp      * speed * dt;
+    aircraft.position.z += -cy * cp * speed * dt;
+  }
+
+  const g = groundAt(aircraft.position.x, aircraft.position.z);
+  const floor = Math.max(g + CONFIG.minAGL, 3);
+  if (aircraft.position.y < floor) aircraft.position.y = floor;
+
+  aircraft.rotation.set(pitch, yaw, roll, 'YXZ');
+
+  hudSpeed.textContent = Math.round(speed * CONFIG.speedReadout);
+  hudAlt.textContent = Math.round((aircraft.position.y - Math.max(0, g)) * 100).toLocaleString();
+  hudHdg.textContent = Math.round(((-yaw * 180 / Math.PI) % 360 + 360) % 360).toString().padStart(3, '0');
+  const n = nearest();
+  hudCity.textContent = `${n.name} · ${n.km} km`;
 }
 
 let last = performance.now();
@@ -762,92 +1212,21 @@ function animate() {
   const now = performance.now();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-
   update(dt);
+  updateLabels();
   drawMinimap();
   renderer.render(scene, camera);
 }
 
-function update(dt) {
-  if (flyingTo) {
-    // Smooth ease-in-out interpolation from current pose to target pose
-    flyingTo.t += dt;
-    const raw = Math.min(1, flyingTo.t / flyingTo.dur);
-    const t = raw * raw * (3 - 2 * raw);
-    aircraft.position.x = lerp(flyingTo.fromX, flyingTo.toX, t);
-    aircraft.position.y = lerp(flyingTo.fromY, flyingTo.toY, t);
-    aircraft.position.z = lerp(flyingTo.fromZ, flyingTo.toZ, t);
-    yaw   = lerpAngle(flyingTo.fromYaw,   flyingTo.toYaw,   t);
-    pitch = lerp(flyingTo.fromPitch, flyingTo.toPitch, t);
-    targetRoll = 0;
-    roll += (targetRoll - roll) * Math.min(1, dt * CONFIG.bankSmoothing);
-    if (raw >= 1) flyingTo = null;
-  } else {
-    // --- Manual controls ---
-    let turn = 0;
-    if (keys['KeyA'] || keys['ArrowLeft'])  turn += 1;
-    if (keys['KeyD'] || keys['ArrowRight']) turn -= 1;
-    let pitchIn = 0;
-    if (keys['ArrowUp'])   pitchIn += 1;
-    if (keys['ArrowDown']) pitchIn -= 1;
-    if (keys['KeyW']) speed = Math.min(CONFIG.maxSpeed, speed + CONFIG.throttleRate * dt);
-    if (keys['KeyS']) speed = Math.max(CONFIG.minSpeed, speed - CONFIG.throttleRate * dt);
-
-    // Apply mouse-look deltas (consumed each frame)
-    yaw   += mouseDYaw;   mouseDYaw = 0;
-    pitch += mouseDPitch; mouseDPitch = 0;
-
-    // Apply key steering
-    yaw   += turn * CONFIG.turnRate  * dt;
-    pitch += pitchIn * CONFIG.pitchRate * dt;
-    pitch  = Math.max(-0.7, Math.min(0.7, pitch));
-
-    // Bank when turning (looks cinematic)
-    targetRoll = turn * CONFIG.bankMax;
-    roll += (targetRoll - roll) * Math.min(1, dt * CONFIG.bankSmoothing);
-
-    // Forward motion — camera looks down -Z in local space, so world forward is
-    // R(yaw, pitch) applied to (0,0,-1).
-    const cp = Math.cos(pitch), sp = Math.sin(pitch);
-    const cy = Math.cos(yaw),   sy = Math.sin(yaw);
-    aircraft.position.x += (-sy * cp) * speed * dt;
-    aircraft.position.y += ( sp     ) * speed * dt;
-    aircraft.position.z += (-cy * cp) * speed * dt;
-  }
-
-  // Prevent flying into terrain
-  const groundY = heightAt(aircraft.position.x, aircraft.position.z);
-  const floor = Math.max(groundY + CONFIG.minAGL, 1);
-  if (aircraft.position.y < floor) aircraft.position.y = floor;
-
-  // Apply orientation. Order YXZ = yaw → pitch → roll, standard for aircraft.
-  aircraft.rotation.set(pitch, yaw, roll, 'YXZ');
-
-  // HUD updates
-  hudSpeed.textContent = Math.round(speed * 1.94);      // world-units/s → arbitrary "knots"
-  hudAlt.textContent   = Math.round(aircraft.position.y - groundY);
-  // Convert yaw to compass heading (0° = North). yaw=0 faces -Z (North).
-  let hdg = ((-yaw * 180 / Math.PI) % 360 + 360) % 360;
-  hudHdg.textContent   = Math.round(hdg).toString().padStart(3, '0');
-  const near = findNearestCity();
-  hudCity.textContent  = `${near.name} · ${Math.round(near.dist)}u`;
-}
-
-/* ==========================================================================
-   RESIZE + SPLASH
-   ========================================================================== */
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(innerWidth, innerHeight);
 });
-
 document.getElementById('startBtn').addEventListener('click', () => {
   document.getElementById('splash').classList.add('hidden');
-  document.getElementById('hud').classList.remove('hidden');
-  document.getElementById('minimap').classList.remove('hidden');
-  document.getElementById('flyto').classList.remove('hidden');
-  document.getElementById('instructions').classList.remove('hidden');
+  for (const id of ['hud', 'minimap', 'flyto', 'instructions'])
+    document.getElementById(id).classList.remove('hidden');
 });
 
 animate();
