@@ -32,7 +32,7 @@
     letter-spacing: 0.14em; margin-top: 4px; }
 
   #flyto { position: fixed; bottom: 18px; left: 18px;
-    display: flex; gap: 6px; flex-wrap: wrap; max-width: 46vw; }
+    display: flex; gap: 6px; flex-wrap: wrap; max-width: 62vw; }
   #flyto button {
     padding: 7px 12px; background: rgba(10,15,25,0.42);
     color: #fff; border: 1px solid rgba(255,255,255,0.12); border-radius: 18px;
@@ -203,14 +203,24 @@ const CONFIG = {
    Edit these to move a city; everything else follows.
    ========================================================================== */
 const CITIES = [
-  { name: 'Seoul',    x:   -2, z:   -2, urbanR: 20, baseM:  40 },
-  { name: 'Incheon',  x:  -26, z:   10, urbanR: 12, baseM:  28 },
-  { name: 'Daejeon',  x:   34, z:  133, urbanR: 11, baseM:  70 },
-  { name: 'Daegu',    x:  142, z:  186, urbanR: 12, baseM:  50 },
-  { name: 'Gwangju',  x:  -13, z:  266, urbanR: 11, baseM:  70 },
-  { name: 'Gyeongju', x:  198, z:  188, urbanR:  9, baseM:  50 },
-  { name: 'Busan',    x:  185, z:  263, urbanR: 13, baseM:  32 },
-  { name: 'Jeju',     x:  -42, z:  449, urbanR:  0, baseM:   0 },  // island, own mesh
+  { name: 'Seoul',     x:   -2, z:   -2, urbanR: 20, baseM:  40 },
+  { name: 'Incheon',   x:  -26, z:   10, urbanR: 12, baseM:  28 },
+  { name: 'Suwon',     x:    1, z:   32, urbanR:  8, baseM:  45 },
+  { name: 'Chuncheon', x:   65, z:  -37, urbanR:  6, baseM:  80 },
+  { name: 'Sokcho',    x:  133, z:  -64, urbanR:  5, baseM:  32 },
+  { name: 'Gangneung', x:  163, z:  -20, urbanR:  6, baseM:  34 },
+  { name: 'Cheongju',  x:   44, z:  101, urbanR:  7, baseM:  60 },
+  { name: 'Daejeon',   x:   34, z:  133, urbanR: 11, baseM:  70 },
+  { name: 'Jeonju',    x:   13, z:  192, urbanR:  7, baseM:  55 },
+  { name: 'Daegu',     x:  142, z:  186, urbanR: 12, baseM:  50 },
+  { name: 'Pohang',    x:  203, z:  168, urbanR:  7, baseM:  30 },
+  { name: 'Gyeongju',  x:  198, z:  188, urbanR:  9, baseM:  50 },
+  { name: 'Ulsan',     x:  199, z:  221, urbanR:  8, baseM:  22 },
+  { name: 'Gwangju',   x:  -13, z:  266, urbanR: 11, baseM:  70 },
+  { name: 'Mokpo',     x:  -48, z:  300, urbanR:  5, baseM:  32 },
+  { name: 'Yeosu',     x:   59, z:  310, urbanR:  6, baseM:  30 },
+  { name: 'Busan',     x:  185, z:  263, urbanR: 13, baseM:  32 },
+  { name: 'Jeju',      x:  -42, z:  449, urbanR:  0, baseM:   0 },  // island, own mesh
 ];
 const city = Object.fromEntries(CITIES.map(c => [c.name, c]));
 
@@ -250,10 +260,12 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;   // richer colour rolloff
+renderer.toneMappingExposure = 1.15;
 document.body.appendChild(renderer.domElement);
 
-scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x4a4030, 0.9));
-const sun = new THREE.DirectionalLight(0xfff4d6, 1.05);
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x4a4030, 1.05));
+const sun = new THREE.DirectionalLight(0xfff4d6, 1.3);
 sun.position.set(3000, 5000, 2000);
 scene.add(sun);
 
@@ -276,7 +288,9 @@ scene.add(sun);
 /* Sea */
 {
   const geo = new THREE.PlaneGeometry(60000, 60000).rotateX(-Math.PI / 2);
-  const sea = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x2f6ea9 }));
+  // Phong for a sun glint on the water
+  const sea = new THREE.Mesh(geo, new THREE.MeshPhongMaterial(
+    { color: 0x2e6fae, specular: 0x88aabb, shininess: 48 }));
   sea.position.set(80 * KM, -0.5, 200 * KM);
   scene.add(sea);
 }
@@ -371,6 +385,7 @@ const BASINS = CITIES.filter(c => c.urbanR > 0).map(c => ({
 
 function heightAt(wx, wz) {
   let y = mainlandHeight(wx, wz);
+  if (y <= 0) return y;   // offshore — city basins must never lift the seafloor
   for (const b of BASINS) {
     const d = Math.hypot(wx - b.x, wz - b.z);
     if (d < b.r) y = lerp(y, b.y, 1 - smoothstep(b.r * 0.5, b.r, d));
@@ -413,6 +428,7 @@ function groundAt(wx, wz) {
    TERRAIN MESH — flat-shaded, coloured per face by elevation
    ========================================================================== */
 const _c = new THREE.Color();
+const _rock = new THREE.Color(0.46, 0.43, 0.37);
 function colorForHeight(out, y) {
   const m = y / VEX * 100;              // world units back to real metres
   if      (m <   12) out.setRGB(0.85, 0.81, 0.60);   // beach
@@ -428,7 +444,20 @@ function finishTerrain(geo) {
   const p = ni.attributes.position;
   const colors = new Float32Array(p.count * 3);
   for (let i = 0; i < p.count; i += 3) {
-    colorForHeight(_c, (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3);
+    const yAvg = (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3;
+    colorForHeight(_c, yAvg);
+    // Steep faces read as bare rock, which brings the ridgelines out
+    const ux = p.getX(i+1) - p.getX(i), uy = p.getY(i+1) - p.getY(i), uz = p.getZ(i+1) - p.getZ(i);
+    const vx = p.getX(i+2) - p.getX(i), vy = p.getY(i+2) - p.getY(i), vz = p.getZ(i+2) - p.getZ(i);
+    const nx = uy * vz - uz * vy, nyc = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const ny = Math.abs(nyc) / (Math.hypot(nx, nyc, nz) + 1e-9);
+    const steep = 1 - ny;
+    if (yAvg > mv(120) && steep > 0.30) {
+      _c.lerp(_rock, Math.min(1, (steep - 0.30) * 2.4) * 0.85);
+    }
+    // Slight per-face tonal variation so large fields don't band
+    const tone = (hash2(i * 0.13, i * 0.71) - 0.5) * 0.055;
+    _c.r += tone; _c.g += tone; _c.b += tone;
     for (let k = 0; k < 3; k++) {
       colors[(i + k) * 3] = _c.r; colors[(i + k) * 3 + 1] = _c.g; colors[(i + k) * 3 + 2] = _c.b;
     }
@@ -440,14 +469,14 @@ function finishTerrain(geo) {
 
 { // mainland
   const x0 = -110 * KM, x1 = 250 * KM, z0 = -110 * KM, z1 = 400 * KM;
-  const geo = new THREE.PlaneGeometry(x1 - x0, z1 - z0, 300, 380).rotateX(-Math.PI / 2);
+  const geo = new THREE.PlaneGeometry(x1 - x0, z1 - z0, 380, 480).rotateX(-Math.PI / 2);
   geo.translate((x0 + x1) / 2, 0, (z0 + z1) / 2);
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) p.setY(i, heightAt(p.getX(i), p.getZ(i)));
   scene.add(finishTerrain(geo));
 }
 { // Jeju
-  const geo = new THREE.PlaneGeometry(95 * KM, 55 * KM, 120, 76).rotateX(-Math.PI / 2);
+  const geo = new THREE.PlaneGeometry(95 * KM, 55 * KM, 150, 96).rotateX(-Math.PI / 2);
   geo.translate(JEJU.cx * KM, 0, JEJU.cz * KM);
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
@@ -484,6 +513,7 @@ const MAT = {
   // Unlit so rivers read as flat colour regardless of which way the strip winds
   water:    new THREE.MeshBasicMaterial({ color: 0x3f83b8, side: THREE.DoubleSide }),
   red:      new THREE.MeshLambertMaterial({ color: 0xd0392f, flatShading: true }),
+  silver:   new THREE.MeshLambertMaterial({ color: 0xc9ced6, flatShading: true }),
 };
 
 /* ==========================================================================
@@ -506,16 +536,20 @@ function mergeGeometries(geoms) {
   out.setAttribute('color',    new THREE.BufferAttribute(col, 3));
   return out;
 }
-function pushBox(list, w, h, d, x, y, z, color, rotY = 0) {
-  let g = new THREE.BoxGeometry(w, h, d);
+/* Push any geometry into a merge list, coloured and placed. y is the CENTRE. */
+function pushGeo(list, g, color, x, y, z, rotY = 0) {
   if (rotY) g.rotateY(rotY);
-  g.translate(x, y + h / 2, z);
+  g.translate(x, y, z);
   g = g.toNonIndexed();
   const n = g.attributes.position.count, cols = new Float32Array(n * 3);
   const c = new THREE.Color(color);
   for (let i = 0; i < n; i++) { cols[i*3] = c.r; cols[i*3+1] = c.g; cols[i*3+2] = c.b; }
   g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
   list.push(g);
+}
+/* Box variant: y is the BASE, like a building footprint. */
+function pushBox(list, w, h, d, x, y, z, color, rotY = 0) {
+  pushGeo(list, new THREE.BoxGeometry(w, h, d), color, x, y + h / 2, z, rotY);
 }
 function meshFromBoxes(list) {
   const m = new THREE.Mesh(mergeGeometries(list), MAT.vcol);
@@ -524,7 +558,7 @@ function meshFromBoxes(list) {
   return m;
 }
 
-const PALETTE = [0xb9bdc5, 0xa3aab4, 0x7ba4c6, 0x8fb0c4, 0xc8bba4, 0x596069, 0xd2cec4];
+const PALETTE = [0xb9c2cc, 0x9aa7b6, 0x6fa3cf, 0x87b3cc, 0xd2bfa0, 0x5b6470, 0xe0d9c8, 0x8fa98f];
 
 /* A jittered grid of city blocks. Sizes are given in real metres.
    `avoid` holds [x, z, radius] circles kept clear for monuments and rivers. */
@@ -606,7 +640,7 @@ function cityLabel(name, x, y, z) {
 }
 /* Landmark name — smaller, with a leader line down to the structure */
 function markLabel(name, x, topY, z) {
-  const labelY = topY + 40;
+  const labelY = topY + 26;
   addLabel(MARK_LABELS, name, x, labelY, z, { accent: false, k: 0.042, min: 5, max: 34, maxDist: 900 });
   scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(
     [new THREE.Vector3(x, topY, z), new THREE.Vector3(x, labelY - 8, z)]), stickMat));
@@ -714,7 +748,10 @@ function pagoda(g, x, y, z, tiers, baseM) {
   const b63    = [cx - 5 * KM,  cz + 4 * KM];        // Yeouido, on the river
 
   const avoid = river.map(([x, z]) => [x, z, 1.9 * KM]);
-  avoid.push([...namsan, 3.2 * KM], [...palace, 2.4 * KM], [...lotte, 1.6 * KM], [...b63, 1.6 * KM]);
+  const trade = [cx + 6.2 * KM, cz + 8.4 * KM];   // Trade Tower, COEX
+  const ddp   = [cx + 1.6 * KM, cz - 4.2 * KM];   // Dongdaemun Design Plaza
+  avoid.push([...namsan, 3.2 * KM], [...palace, 2.4 * KM], [...lotte, 1.6 * KM],
+             [...b63, 1.6 * KM], [...trade, 5], [...ddp, 5]);
 
   const boxes = [];
   // Gangbuk (north of the river) — the historic core
@@ -766,7 +803,30 @@ function pagoda(g, x, y, z, tiers, baseM) {
     markLabel('Gyeongbokgung', palace[0], gy + top, palace[1]);
   }
 
-  cityLabel('SEOUL', cx, gy + sv(1500), cz);
+  // Bukhansan (836 m) — the granite massif on the city's northern edge
+  const bhx = cx - 7 * KM, bhz = cz - 15 * KM;
+  const bukhan = new THREE.Mesh(new THREE.ConeGeometry(tw(4200), mv(836), 9), MAT.hill);
+  bukhan.position.set(bhx, gy + mv(836) / 2 - 1, bhz); scene.add(bukhan);
+  const granite = new THREE.Mesh(new THREE.ConeGeometry(tw(1300), mv(260), 7), MAT.stone);
+  granite.position.set(bhx, gy + mv(836) - 1 + mv(100), bhz); scene.add(granite);
+  markLabel('Bukhansan', bhx, gy + mv(836) + mv(230), bhz);
+
+  // Trade Tower (229 m), COEX — the stepped glass slab in Gangnam
+  const tt = new THREE.Mesh(new THREE.BoxGeometry(sh(90), sv(229), sh(160)), MAT.glass);
+  tt.position.set(trade[0], gy + sv(114), trade[1]); scene.add(tt);
+  markLabel('Trade Tower', trade[0], gy + sv(232), trade[1]);
+
+  // Dongdaemun Design Plaza — the silver blob
+  const blob = new THREE.Mesh(new THREE.SphereGeometry(sh(140), 10, 7), MAT.silver);
+  blob.scale.set(1.35, 0.32, 0.95);
+  blob.position.set(ddp[0], gy + sh(140) * 0.32, ddp[1]); scene.add(blob);
+  markLabel('DDP', ddp[0], gy + sh(140) * 0.7 + 4, ddp[1]);
+
+  // Banpo Bridge — a low crossing of the Han
+  const banpo = new THREE.Mesh(new THREE.BoxGeometry(sh(80), sv(8), 1.6 * KM), MAT.concrete);
+  banpo.position.set(cx + 0.6 * KM, gy + 1.6, cz + 2.6 * KM); scene.add(banpo);
+
+  cityLabel('SEOUL', cx, gy + 62, cz);
 }
 
 /* ==========================================================================
@@ -778,7 +838,7 @@ function pagoda(g, x, y, z, tiers, baseM) {
   cityBlocks(boxes, { cx, cz, ground: gy, cols: 18, rows: 14,
                       blockM: 800, hMinM: 25, hMaxM: 90, seed: 91 });
   scene.add(meshFromBoxes(boxes));
-  cityLabel('INCHEON', cx, gy + sv(1100), cz);
+  cityLabel('INCHEON', cx, gy + 52, cz);
 
   // Incheon International Airport — two parallel 3.75 km runways + terminal
   const ax = AIRPORT.cx * KM, az = AIRPORT.cz * KM, ay = mv(12);
@@ -826,7 +886,12 @@ function pagoda(g, x, y, z, tiers, baseM) {
   for (let i = 0; i < 8; i++)
     pushBox(boxes, sh(260 + rng() * 90), sv(180 + rng() * 130), sh(260 + rng() * 90),
             cx + 4.2 * KM + (rng() - 0.5) * 2.2 * KM, gy, cz + 2.2 * KM + (rng() - 0.5) * 1.6 * KM, 0x8fb0c4);
+  // Haeundae LCT — the 411 m trio right on the beach
+  pushBox(boxes, sh(130), sv(411), sh(130), cx + 5.8 * KM, gy, cz + 3.1 * KM, 0xa8c3d4);
+  pushBox(boxes, sh(115), sv(339), sh(115), cx + 5.3 * KM, gy, cz + 2.6 * KM, 0xa8c3d4);
+  pushBox(boxes, sh(115), sv(339), sh(115), cx + 6.3 * KM, gy, cz + 2.6 * KM, 0xa8c3d4);
   scene.add(meshFromBoxes(boxes));
+  markLabel('Haeundae LCT', cx + 5.8 * KM, gy + sv(420), cz + 3.1 * KM);
 
   // Gwangan Bridge — 7.4 km twin-deck suspension span across the bay
   {
@@ -895,7 +960,7 @@ function pagoda(g, x, y, z, tiers, baseM) {
     markLabel('Port of Busan', px, quayY + sv(105), pz);
   }
 
-  cityLabel('BUSAN', cx, gy + sv(1300), cz);
+  cityLabel('BUSAN', cx, gy + 58, cz);
 }
 
 /* ==========================================================================
@@ -937,7 +1002,7 @@ function pagoda(g, x, y, z, tiers, baseM) {
     markLabel('Daereungwon Tombs', gx, gy + hv(28), gz);
   }
 
-  cityLabel('GYEONGJU', cx, gy + sv(1100), cz);
+  cityLabel('GYEONGJU', cx, gy + 46, cz);
 }
 
 /* ==========================================================================
@@ -945,10 +1010,18 @@ function pagoda(g, x, y, z, tiers, baseM) {
    ========================================================================== */
 {
   const c = city['Daejeon'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  // Gapcheon stream, south to north through the city
+  const river = [[-1.4,5.5],[-0.9,2.6],[-0.2,0],[0.5,-2.6],[0.9,-5.5]]
+    .map(([x, z]) => [cx + x * KM, cz + z * KM]);
+  scene.add(ribbon(river, 0.5 * KM, gy + 1.0, MAT.water));
+  const avoid = river.map(([x, z]) => [x, z, 0.75 * KM]);
   const boxes = [];
   cityBlocks(boxes, { cx, cz, ground: gy, cols: 17, rows: 13, blockM: 800,
-                      hMinM: 25, hMaxM: 95, seed: 61 });
+                      hMinM: 25, hMaxM: 95, seed: 61, avoid });
   scene.add(meshFromBoxes(boxes));
+  // Expo Bridge — the arch footbridge over the Gapcheon
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.4, 6, 16, Math.PI), MAT.white);
+  arch.position.set(cx - 0.55 * KM, gy + 1.0, cz - 1.4 * KM); scene.add(arch);
   // Expo Hanbit Tower (93 m)
   const tx = cx + 3 * KM, tz = cz - 1.6 * KM;
   const spire = new THREE.Mesh(new THREE.ConeGeometry(mast(14), sv(93), 8), MAT.white);
@@ -956,13 +1029,18 @@ function pagoda(g, x, y, z, tiers, baseM) {
   const ring = new THREE.Mesh(new THREE.TorusGeometry(mast(30), mast(5), 6, 18), MAT.concrete);
   ring.rotation.x = Math.PI / 2; ring.position.set(tx, gy + sv(62), tz); scene.add(ring);
   markLabel('Hanbit Tower', tx, gy + sv(96), tz);
-  cityLabel('DAEJEON', cx, gy + sv(1100), cz);
+  cityLabel('DAEJEON', cx, gy + 50, cz);
 }
 {
   const c = city['Daegu'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  // Geumho river skirting the north edge of the basin
+  const river = [[-7,-4.4],[-3.5,-5.2],[0,-4.6],[3.5,-5.4],[7,-4.6]]
+    .map(([x, z]) => [cx + x * KM, cz + z * KM]);
+  scene.add(ribbon(river, 0.6 * KM, gy + 1.0, MAT.water));
+  const avoid = river.map(([x, z]) => [x, z, 0.85 * KM]);
   const boxes = [];
   cityBlocks(boxes, { cx, cz, ground: gy, cols: 19, rows: 14, blockM: 800,
-                      hMinM: 28, hMaxM: 105, seed: 83 });
+                      hMinM: 28, hMaxM: 105, seed: 83, avoid });
   scene.add(meshFromBoxes(boxes));
   // Daegu 83 Tower (202 m)
   const tx = cx - 3 * KM, tz = cz + 1.4 * KM;
@@ -973,20 +1051,31 @@ function pagoda(g, x, y, z, tiers, baseM) {
   const ant = new THREE.Mesh(new THREE.ConeGeometry(mast(5), sv(60), 6), MAT.white);
   ant.position.set(tx, gy + sv(217), tz); scene.add(ant);
   markLabel('83 Tower', tx, gy + sv(250), tz);
-  cityLabel('DAEGU', cx, gy + sv(1100), cz);
+  cityLabel('DAEGU', cx, gy + 52, cz);
 }
 {
   const c = city['Gwangju'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  // Yeongsan river curving through the west side
+  const river = [[-6,4.6],[-3.4,2.4],[-1.6,0],[-2.4,-2.6],[-4.4,-5]]
+    .map(([x, z]) => [cx + x * KM, cz + z * KM]);
+  scene.add(ribbon(river, 0.55 * KM, gy + 1.0, MAT.water));
+  const avoid = river.map(([x, z]) => [x, z, 0.8 * KM]);
   const boxes = [];
   cityBlocks(boxes, { cx, cz, ground: gy, cols: 17, rows: 13, blockM: 800,
-                      hMinM: 22, hMaxM: 85, seed: 37 });
+                      hMinM: 22, hMaxM: 85, seed: 37, avoid });
   scene.add(meshFromBoxes(boxes));
   // A traditional pavilion in a riverside park
   const g = new THREE.Group();
   const top = hall(g, 26, 18, 0, 0, 0);
   g.position.set(cx + 2.6 * KM, gy, cz + 1.5 * KM); scene.add(g);
   markLabel('Gwangju Pavilion', cx + 2.6 * KM, gy + top, cz + 1.5 * KM);
-  cityLabel('GWANGJU', cx, gy + sv(1100), cz);
+  // Mudeungsan (1187 m) rising immediately east of the city
+  const mdx = cx + 9.5 * KM, mdz = cz + 1 * KM;
+  const mdBase = heightAt(mdx, mdz);
+  const mud = new THREE.Mesh(new THREE.ConeGeometry(tw(5200), mv(1187), 9), MAT.hill);
+  mud.position.set(mdx, mdBase + mv(1187) / 2 - 1, mdz); scene.add(mud);
+  markLabel('Mudeungsan', mdx, mdBase + mv(1187) + 4, mdz);
+  cityLabel('GWANGJU', cx, gy + 50, cz);
 }
 
 /* ==========================================================================
@@ -1002,18 +1091,199 @@ function pagoda(g, x, y, z, tiers, baseM) {
   scene.add(meshFromBoxes(boxes));
   markLabel('Hallasan', JEJU.cx * KM, mv(JEJU.peakM) + mv(120), JEJU.cz * KM);
   markLabel('Seongsan Ilchulbong', (JEJU.cx + 33) * KM, mv(200), (JEJU.cz + 2) * KM);
-  cityLabel('JEJU', tx, ty + sv(900), tz);
+  cityLabel('JEJU', tx, ty + 52, tz);
+}
+
+/* ==========================================================================
+   MORE CITIES — the rest of the country, each with something to recognise
+   ========================================================================== */
+
+/* Suwon — Hwaseong Fortress: a walled ring with gate pavilions */
+{
+  const c = city['Suwon'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const fx = cx - 1 * KM, fz = cz - 2.4 * KM, R = 13;
+  const boxes = [];
+  cityBlocks(boxes, { cx: cx + 0.6 * KM, cz: cz + 2 * KM, ground: gy, cols: 13, rows: 10,
+                      blockM: 750, hMinM: 20, hMaxM: 80, seed: 19,
+                      avoid: [[fx, fz, R + 4]] });
+  // Fortress wall: 22 straight segments approximating the ring
+  for (let i = 0; i < 22; i++) {
+    const a2 = i / 22 * Math.PI * 2;
+    pushBox(boxes, 4.4, hv(9), 1.0, fx + Math.cos(a2) * R, gy, fz + Math.sin(a2) * R,
+            0xb9ab90, -a2);
+  }
+  for (let i = 0; i < 4; i++) {   // gate pavilions at the cardinal points
+    const a2 = i * Math.PI / 2;
+    const gx = fx + Math.cos(a2) * R, gz = fz + Math.sin(a2) * R;
+    pushBox(boxes, hh(13), hv(13), hh(9), gx, gy, gz, 0xa03d2c);
+    pushGeo(boxes, new THREE.ConeGeometry(hh(10), hv(5), 4), 0x41403c,
+            gx, gy + hv(13) + hv(2.5), gz, Math.PI / 4);
+  }
+  scene.add(meshFromBoxes(boxes));
+  markLabel('Hwaseong Fortress', fx, gy + hv(30), fz);
+  cityLabel('SUWON', cx, gy + 46, cz);
+}
+
+/* Chuncheon — the lake town */
+{
+  const c = city['Chuncheon'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx, cz, ground: gy, cols: 11, rows: 9, blockM: 750,
+                      hMinM: 15, hMaxM: 60, seed: 67 });
+  scene.add(meshFromBoxes(boxes));
+  const lake = new THREE.Mesh(new THREE.CircleGeometry(2.6 * KM, 22).rotateX(-Math.PI / 2), MAT.water);
+  lake.position.set(cx + 4.2 * KM, gy + 0.8, cz - 1.8 * KM);
+  scene.add(lake);
+  markLabel('Uiamho Lake', cx + 4.2 * KM, gy + 14, cz - 1.8 * KM);
+  cityLabel('CHUNCHEON', cx, gy + 44, cz);
+}
+
+/* Sokcho — gateway to Seoraksan, whose peaks are just inland */
+{
+  const c = city['Sokcho'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx, cz, ground: gy, cols: 9, rows: 8, blockM: 700,
+                      hMinM: 12, hMaxM: 45, seed: 41, density: 0.75 });
+  scene.add(meshFromBoxes(boxes));
+  const sx = 128 * KM, sz = -60 * KM;
+  markLabel('Seoraksan', sx, heightAt(sx, sz) + 8, sz);
+  cityLabel('SOKCHO', cx, gy + 42, cz);
+}
+
+/* Gangneung — beach resort row on the east coast */
+{
+  const c = city['Gangneung'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx, cz, ground: gy, cols: 11, rows: 9, blockM: 750,
+                      hMinM: 14, hMaxM: 55, seed: 73 });
+  for (let i = 0; i < 5; i++)   // hotel towers along Gyeongpo beach
+    pushBox(boxes, sh(90), sv(90 + (i % 3) * 30), sh(90),
+            cx + 3.4 * KM + i * sh(180), gy, cz - 2.6 * KM, 0x87b3cc);
+  scene.add(meshFromBoxes(boxes));
+  markLabel('Gyeongpo Beach', cx + 4 * KM, gy + sv(160), cz - 2.6 * KM);
+  cityLabel('GANGNEUNG', cx, gy + 44, cz);
+}
+
+/* Cheongju */
+{
+  const c = city['Cheongju'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx, cz, ground: gy, cols: 13, rows: 10, blockM: 750,
+                      hMinM: 18, hMaxM: 70, seed: 59 });
+  scene.add(meshFromBoxes(boxes));
+  cityLabel('CHEONGJU', cx, gy + 46, cz);
+}
+
+/* Jeonju — the hanok village against a modern downtown */
+{
+  const c = city['Jeonju'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const hvx = cx + 2.4 * KM, hvz = cz + 1.8 * KM;
+  const boxes = [];
+  cityBlocks(boxes, { cx: cx - 1 * KM, cz: cz - 1 * KM, ground: gy, cols: 13, rows: 10,
+                      blockM: 750, hMinM: 18, hMaxM: 70, seed: 23,
+                      avoid: [[hvx, hvz, 20]] });
+  // Hanok Maeul — a field of small tiled-roof courtyard houses
+  const rng = seededRng(21);
+  for (let i = 0; i < 80; i++) {
+    const hx = hvx + (rng() - 0.5) * 2.8 * KM;
+    const hz = hvz + (rng() - 0.5) * 2.2 * KM;
+    const w = hh(12 + rng() * 6), d = hh(9 + rng() * 5);
+    pushBox(boxes, w * 0.8, hv(4), d * 0.8, hx, gy, hz, 0xcbb797);
+    pushBox(boxes, w, hv(2.2), d, hx, gy + hv(4), hz, 0x41403c);
+  }
+  scene.add(meshFromBoxes(boxes));
+  markLabel('Jeonju Hanok Village', hvx, gy + hv(20), hvz);
+  cityLabel('JEONJU', cx, gy + 46, cz);
+}
+
+/* Pohang — the POSCO steelworks on the coast */
+{
+  const c = city['Pohang'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx: cx - 2 * KM, cz: cz - 1 * KM, ground: gy, cols: 12, rows: 9,
+                      blockM: 750, hMinM: 16, hMaxM: 65, seed: 53 });
+  const px = cx + 2.6 * KM, pz = cz + 1.6 * KM;
+  for (let i = 0; i < 3; i++)   // mill sheds
+    pushBox(boxes, sh(320), sv(35), sh(140), px, gy, pz + (i - 1) * sh(220), 0x5b6b7a);
+  for (const dx of [-1, 1]) {   // chimney pair with red banding
+    pushGeo(boxes, new THREE.CylinderGeometry(mast(8), mast(10), sv(170), 8), 0xd8d5cf,
+            px + dx * sh(200), gy + sv(85), pz - sh(260));
+    pushGeo(boxes, new THREE.CylinderGeometry(mast(8.5), mast(8.5), sv(24), 8), 0xc0563e,
+            px + dx * sh(200), gy + sv(160), pz - sh(260));
+  }
+  scene.add(meshFromBoxes(boxes));
+  markLabel('POSCO Steelworks', px, gy + sv(200), pz);
+  cityLabel('POHANG', cx, gy + 44, cz);
+}
+
+/* Ulsan — shipyard and petrochemical industry */
+{
+  const c = city['Ulsan'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx: cx - 2.4 * KM, cz, ground: gy, cols: 14, rows: 10, blockM: 750,
+                      hMinM: 20, hMaxM: 85, seed: 47 });
+  // Tank farm + flare stack
+  for (let i = 0; i < 12; i++)
+    pushGeo(boxes, new THREE.CylinderGeometry(sh(38), sh(38), sv(22), 10), 0xdfe2e6,
+            cx + 2.4 * KM + (i % 4) * sh(115), gy + sv(11), cz + 2.8 * KM + ((i / 4) | 0) * sh(115));
+  pushGeo(boxes, new THREE.CylinderGeometry(mast(3), mast(4), sv(120), 8), 0xb5b9be,
+          cx + 4.8 * KM, gy + sv(60), cz + 2.4 * KM);
+  pushGeo(boxes, new THREE.ConeGeometry(mast(8), sv(28), 8), 0xe8963c,
+          cx + 4.8 * KM, gy + sv(134), cz + 2.4 * KM);
+  // Shipyard: dock apron, a hull under construction, the Goliath crane over it
+  const sx = cx + 3.6 * KM, sz2 = cz - 2.2 * KM;
+  pushBox(boxes, sh(420), sv(6), sh(190), sx, gy, sz2, 0x8d9097);
+  pushBox(boxes, sh(300), sv(26), sh(46), sx, gy + sv(6), sz2, 0xc0563e);
+  pushBox(boxes, sh(46), sv(22), sh(46), sx + sh(95), gy + sv(32), sz2, 0xdfe2e6);
+  for (const d2 of [-1, 1])
+    pushBox(boxes, sh(24), sv(105), sh(24), sx + d2 * sh(175), gy, sz2 + sh(75), 0x3f7ab8);
+  pushBox(boxes, sh(390), sv(16), sh(30), sx, gy + sv(105), sz2 + sh(75), 0x3f7ab8);
+  scene.add(meshFromBoxes(boxes));
+  markLabel('Ulsan Shipyard', sx, gy + sv(150), sz2);
+  cityLabel('ULSAN', cx, gy + 46, cz);
+}
+
+/* Mokpo — harbour town under Yudalsan */
+{
+  const c = city['Mokpo'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx, cz, ground: gy, cols: 9, rows: 8, blockM: 700,
+                      hMinM: 12, hMaxM: 45, seed: 29, density: 0.75 });
+  pushBox(boxes, 1.8 * KM, sv(12), sh(220), cx - 1.4 * KM, 0.2, cz + 2.6 * KM, 0x8d9097);
+  const rng = seededRng(17);
+  for (let i = 0; i < 6; i++)   // fishing boats along the quay
+    pushBox(boxes, sh(60), sv(12), sh(20), cx - 2.2 * KM + rng() * 1.6 * KM,
+            0.4, cz + 3.0 * KM + rng() * 0.3 * KM, 0x3f7ab8);
+  scene.add(meshFromBoxes(boxes));
+  const yudal = new THREE.Mesh(new THREE.ConeGeometry(tw(1500), mv(228), 12), MAT.hill);
+  yudal.position.set(cx - 2.6 * KM, gy + mv(114), cz - 1.4 * KM); scene.add(yudal);
+  markLabel('Yudalsan', cx - 2.6 * KM, gy + mv(228) + 4, cz - 1.4 * KM);
+  cityLabel('MOKPO', cx, gy + 42, cz);
+}
+
+/* Yeosu — the Expo waterfront */
+{
+  const c = city['Yeosu'], cx = c.x * KM, cz = c.z * KM, gy = mv(c.baseM);
+  const boxes = [];
+  cityBlocks(boxes, { cx, cz, ground: gy, cols: 10, rows: 8, blockM: 700,
+                      hMinM: 14, hMaxM: 55, seed: 11, density: 0.8 });
+  scene.add(meshFromBoxes(boxes));
+  const bigO = new THREE.Mesh(new THREE.TorusGeometry(4.2, 0.5, 6, 20), MAT.white);
+  bigO.position.set(cx + 2.6 * KM, gy + 4.4, cz + 2.4 * KM); scene.add(bigO);
+  markLabel('Yeosu Expo', cx + 2.6 * KM, gy + 14, cz + 2.4 * KM);
+  cityLabel('YEOSU', cx, gy + 42, cz);
 }
 
 /* ==========================================================================
    FORESTS — a single InstancedMesh of conifers across the hill country
    ========================================================================== */
 {
-  const COUNT = 14000;
+  const COUNT = 24000;
   const trees = new THREE.InstancedMesh(
-    new THREE.ConeGeometry(sh(320), sv(600), 5),
-    new THREE.MeshLambertMaterial({ color: 0x2f6b35, flatShading: true }), COUNT);
+    new THREE.ConeGeometry(3.4, 17, 5),
+    new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), COUNT);
   const m = new THREE.Matrix4(), rng = seededRng(99);
+  const tCol = new THREE.Color();
   let placed = 0, tries = 0;
   while (placed < COUNT && tries < COUNT * 14) {
     tries++;
@@ -1031,12 +1301,33 @@ function pagoda(g, x, y, z, tiers, baseM) {
     }
     const s = 0.7 + rng() * 1.2;
     m.makeScale(s, s, s);
-    m.setPosition(wx, h + sv(300) * s, wz);
-    trees.setMatrixAt(placed++, m);
+    m.setPosition(wx, h + 8.5 * s - 0.4, wz);
+    trees.setMatrixAt(placed, m);
+    // green varies tree to tree so forests don't render as one flat field
+    tCol.setHSL(0.30 + rng() * 0.06, 0.42 + rng() * 0.18, 0.20 + rng() * 0.10);
+    trees.setColorAt(placed, tCol);
+    placed++;
   }
   trees.count = placed;
   trees.instanceMatrix.needsUpdate = true;
+  if (trees.instanceColor) trees.instanceColor.needsUpdate = true;
   scene.add(trees);
+
+  /* Low-poly clouds — merged puffs drifting at 3–4.5 km */
+  const puffs = [], crng = seededRng(77);
+  for (let i = 0; i < 240; i++) {
+    const px = (-120 + crng() * 400) * KM, pz = (-120 + crng() * 620) * KM;
+    const baseY = 34 + crng() * 20, n = 2 + ((crng() * 3) | 0);
+    for (let j = 0; j < n; j++) {
+      const g = new THREE.SphereGeometry(8 + crng() * 12, 7, 5);
+      g.scale(1.7, 0.5, 1.1);
+      pushGeo(puffs, g, 0xffffff,
+              px + (crng() - 0.5) * 24, baseY + (crng() - 0.5) * 3, pz + (crng() - 0.5) * 14);
+    }
+  }
+  scene.add(new THREE.Mesh(mergeGeometries(puffs),
+    new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true,
+                                    transparent: true, opacity: 0.85 })));
 }
 
 /* ==========================================================================
@@ -1112,14 +1403,24 @@ function drawMinimap() {
    sprawling city like Seoul is seen whole while a compact one is seen close.
    bearing is in radians: 0 = approach from the south, π/2 = from the east. */
 const FLY = [
-  { name: 'Seoul',    bearing:  0,             dist: 195, alt: 62 },  // up the Han, Namsan centre
-  { name: 'Incheon',  bearing: -Math.PI / 2,   dist: 400, alt: 42 },  // low in from the sea, over the airport
-  { name: 'Daejeon',  bearing:  0,             dist: 105, alt: 34 },
-  { name: 'Daegu',    bearing:  0,             dist: 115, alt: 38 },
-  { name: 'Gwangju',  bearing: -Math.PI / 2,   dist: 105, alt: 34 },
-  { name: 'Gyeongju', bearing:  0,             dist: 120, alt: 42 },  // temples and tombs side by side
-  { name: 'Busan',    bearing:  0.6,           dist: 125, alt: 42 },  // over the bay
-  { name: 'Jeju',     bearing:  0,             dist: 420, alt: 130 }, // clear of the island, Hallasan framed
+  { name: 'Seoul',     bearing:  0,           dist: 195, alt: 62 },  // up the Han, Namsan centre
+  { name: 'Incheon',   bearing: -Math.PI / 2, dist: 400, alt: 42 },  // low in from the sea, over the airport
+  { name: 'Suwon',     bearing:  0,           dist:  95, alt: 30 },
+  { name: 'Chuncheon', bearing:  0,           dist:  95, alt: 32 },
+  { name: 'Sokcho',    bearing:  Math.PI / 2, dist: 150, alt: 72 },  // from the sea, Seoraksan behind
+  { name: 'Gangneung', bearing:  Math.PI / 2, dist: 130, alt: 52 },
+  { name: 'Cheongju',  bearing:  0,           dist:  95, alt: 30 },
+  { name: 'Daejeon',   bearing:  0,           dist: 105, alt: 34 },
+  { name: 'Jeonju',    bearing:  0,           dist:  95, alt: 30 },
+  { name: 'Daegu',     bearing:  0,           dist: 115, alt: 38 },
+  { name: 'Pohang',    bearing:  Math.PI / 2, dist: 125, alt: 46 },
+  { name: 'Gyeongju',  bearing:  0,           dist: 120, alt: 42 },  // temples and tombs side by side
+  { name: 'Ulsan',     bearing:  Math.PI / 2, dist: 120, alt: 40 },
+  { name: 'Gwangju',   bearing: -Math.PI / 2, dist: 105, alt: 34 },
+  { name: 'Mokpo',     bearing: -Math.PI / 2, dist: 105, alt: 32 },
+  { name: 'Yeosu',     bearing:  0,           dist: 105, alt: 34 },
+  { name: 'Busan',     bearing:  0.6,         dist: 200, alt: 58 },  // over the bay
+  { name: 'Jeju',      bearing:  0,           dist: 420, alt: 130 }, // clear of the island, Hallasan framed
 ];
 const flytoEl = document.getElementById('flyto');
 let flyingTo = null;

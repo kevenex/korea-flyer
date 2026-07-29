@@ -17,12 +17,17 @@ Open `index.html` in a modern browser — no build tools, no assets, no server r
 
 | Place | Landmarks |
 |---|---|
-| Seoul | N Seoul Tower on Namsan, Lotte World Tower, 63 Building, Gyeongbokgung, the Han River |
+| Seoul | N Seoul Tower on Namsan, Lotte World Tower, 63 Building, Trade Tower, DDP, Gyeongbokgung, Bukhansan, the Han River |
 | Incheon | Incheon International Airport on its own island, Incheon Bridge |
-| Busan | Gwangan Bridge, Busan Tower on Yongdusan, the container port, Haeundae towers |
+| Busan | Gwangan Bridge, Busan Tower on Yongdusan, the container port, the Haeundae LCT towers |
 | Gyeongju | Bulguksa temple, the Daereungwon royal tomb mounds |
 | Jeju | Hallasan with its summit crater, Seongsan Ilchulbong |
-| Daejeon / Daegu / Gwangju | Hanbit Tower, 83 Tower, a traditional pavilion |
+| Daejeon / Daegu / Gwangju | Hanbit Tower + Expo Bridge, 83 Tower, a pavilion under Mudeungsan — each with its river |
+| Suwon | Hwaseong Fortress ring wall with gate pavilions |
+| Jeonju | the Hanok Village |
+| Ulsan / Pohang | shipyard with Goliath crane, tank farm and flare stack; POSCO steelworks |
+| Sokcho / Gangneung | Seoraksan; the Gyeongpo beach hotel row |
+| Chuncheon / Cheongju / Mokpo / Yeosu | lake town, plains city, harbour under Yudalsan, the Expo Big-O |
 
 ## How the scale works
 
@@ -61,5 +66,6 @@ Everything worth adjusting sits near the top of `index.html`:
 
 ## Performance
 
-The scene renders in ~130 draw calls and ~280k triangles. Each city's blocks are
-merged into a single geometry, and the ~14,000 trees are one instanced mesh.
+The scene renders in ~160 draw calls and ~470k triangles. Each city's blocks —
+including all its industrial structures — are merged into a single geometry, the
+~24,000 trees are one instanced mesh, and all clouds share one merged mesh.
